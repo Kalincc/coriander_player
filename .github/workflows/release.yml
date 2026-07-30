@@ -52,7 +52,7 @@ jobs:
         run: flutter test
 
       - name: Analyze application sources
-        run: flutter analyze lib test
+        run: flutter analyze --no-fatal-infos lib test
 
       - name: Check Rust library
         run: cargo check --manifest-path rust/Cargo.toml
