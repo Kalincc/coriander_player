@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
+import 'package:coriander_player/release_info.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:github/github.dart';
@@ -40,7 +41,7 @@ Future<Directory> getAppDataDir() async {
 
 class AppSettings {
   static final github = GitHub();
-  static const String version = "1.5.1";
+  static const String version = currentReleaseVersion;
 
   /// 主题模式：亮 / 暗
   ThemeMode themeMode = getWindowsThemeMode();

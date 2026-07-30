@@ -1,4 +1,5 @@
 import 'package:coriander_player/app_settings.dart';
+import 'package:coriander_player/release_info.dart';
 import 'package:coriander_player/src/rust/api/utils.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
@@ -29,20 +30,29 @@ class _CheckForUpdateState extends State<CheckForUpdate> {
                 });
 
                 try {
-                  final newest = await AppSettings.github.repositories
-                      .listReleases(
-                        RepositorySlug("Ferry-200", "coriander_player"),
-                      )
-                      .first;
-                  final newestVer = int.tryParse(
-                        newest.tagName?.substring(1).replaceAll(".", "") ?? "",
-                      ) ??
-                      0;
-                  final currVer = int.tryParse(
-                        AppSettings.version.replaceAll(".", ""),
-                      ) ??
-                      0;
-                  if (newestVer > currVer) {
+                  Release? newest;
+                  ForkReleaseVersion? newestVersion;
+                  await for (final release
+                      in AppSettings.github.repositories.listReleases(
+                    RepositorySlug(
+                      releaseRepositoryOwner,
+                      releaseRepositoryName,
+                    ),
+                  )) {
+                    final parsed = ForkReleaseVersion.tryParse(
+                      release.tagName ?? '',
+                    );
+                    if (parsed != null) {
+                      newest = release;
+                      newestVersion = parsed;
+                      break;
+                    }
+                  }
+
+                  final currentVersion = ForkReleaseVersion.parse(
+                    AppSettings.version,
+                  );
+                  if (newest != null && newestVersion! > currentVersion) {
                     if (context.mounted) {
                       showDialog(
                         context: context,
