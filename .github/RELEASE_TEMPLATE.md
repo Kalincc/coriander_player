@@ -1,0 +1,19 @@
+这是 [Ferry-200/coriander_player](https://github.com/Ferry-200/coriander_player) 的个人功能增强版，由 `Kalincc` fork 并维护。原项目及其版权、许可证归原作者和贡献者所有。
+
+## 本版主要改动
+
+- 支持搜索本地歌词；结果页按歌曲展示歌曲信息和命中的歌词片段，搜索结果不会自动播放。
+- 正在播放歌曲详情页的当前歌词在可视区域内垂直居中。
+- 专辑导航支持“无分类”和“按艺术家分类”，便于快速筛选艺术家。
+- 应用内检查更新和问题反馈均指向本 fork。
+
+## 下载与使用
+
+- `Portable.zip`：完整解压后运行 `coriander_player.exe`，不要单独复制 EXE。
+- `Setup.exe`：先卸载原版，再运行安装程序；安装目录可选择原来的 Coriander Player 目录。
+- 两种发行物都包含 BASS 播放运行库和 `desktop_lyric` 桌面歌词组件。
+- 音乐库与设置保存在 `文档\coriander_player`，安装器不会删除该目录。
+
+## 安全提示
+
+安装程序暂未使用付费代码签名证书，Windows SmartScreen 可能显示未知发布者提示。可使用同一 Release 中的 `SHA256SUMS.txt` 校验下载文件。

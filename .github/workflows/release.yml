@@ -1,0 +1,130 @@
+name: Release Windows packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Version used for a validation build (does not publish)
+        required: true
+        default: v1.5.1-kalin.1
+  push:
+    tags:
+      - 'v*-kalin.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Select release version
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $tag = '${{ inputs.release_tag }}'
+          } else {
+            $tag = $env:GITHUB_REF_NAME
+          }
+          . ./scripts/release_helpers.ps1
+          $version = ConvertFrom-ForkReleaseTag $tag
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+
+      - name: Run Flutter tests
+        run: flutter test
+
+      - name: Analyze application sources
+        run: flutter analyze lib test
+
+      - name: Check Rust library
+        run: cargo check --manifest-path rust/Cargo.toml
+
+      - name: Test release helpers
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/release_helpers_test.ps1
+
+      - name: Build complete portable package
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_windows.ps1 -Tag $env:RELEASE_TAG
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          $env:CORIANDER_RELEASE_VERSION = $env:RELEASE_VERSION
+          $env:CORIANDER_STAGE_DIR = (Resolve-Path 'dist/stage/Coriander Player').Path
+          $env:CORIANDER_OUTPUT_DIR = (Resolve-Path 'dist').Path
+          $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          & $compiler installer/coriander_player.iss
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup exited with code $LASTEXITCODE."
+          }
+
+      - name: Smoke-test installer
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File scripts/test_installer.ps1
+          -InstallerPath "dist/Coriander.Player.$env:RELEASE_VERSION.Setup.exe"
+          -TestRoot build/installer-smoke
+
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          $assets = @(
+            "dist/Coriander.Player.$env:RELEASE_VERSION.Portable.zip",
+            "dist/Coriander.Player.$env:RELEASE_VERSION.Setup.exe"
+          )
+          $lines = foreach ($asset in $assets) {
+            $item = Get-Item -LiteralPath $asset
+            $hash = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($item.Name)"
+          }
+          $lines | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding ascii
+
+      - name: Retain verified packages
+        if: ${{ always() && hashFiles('dist/*.zip', 'dist/*.exe', 'dist/SHA256SUMS.txt') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Coriander-Player-${{ env.RELEASE_VERSION }}
+          path: |
+            dist/Coriander.Player.${{ env.RELEASE_VERSION }}.Portable.zip
+            dist/Coriander.Player.${{ env.RELEASE_VERSION }}.Setup.exe
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:RELEASE_TAG `
+            "dist/Coriander.Player.$env:RELEASE_VERSION.Portable.zip" `
+            "dist/Coriander.Player.$env:RELEASE_VERSION.Setup.exe" `
+            "dist/SHA256SUMS.txt" `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "Coriander Player $env:RELEASE_VERSION" `
+            --notes-file '.github/RELEASE_TEMPLATE.md' `
+            --verify-tag
