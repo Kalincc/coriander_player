@@ -5,6 +5,7 @@ import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_tile.dart';
+import 'package:coriander_player/page/now_playing_page/component/lyric_scroll_positioner.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -111,6 +112,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
   final lyricService = PlayService.instance.lyricService;
   late StreamSubscription lyricLineStreamSubscription;
   final scrollController = ScrollController();
+  LyricViewController? _lyricViewController;
+  bool _centerScheduled = false;
+  Size? _lastViewportSize;
 
   List<LyricViewTile> lyricTiles = [
     LyricViewTile(line: LrcLine.defaultLine, opacity: 1.0)
@@ -128,6 +132,29 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
         lyricService.lyricLineStream.listen(_updateNextLyricLine);
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final next = context.read<LyricViewController>();
+    if (identical(next, _lyricViewController)) return;
+    _lyricViewController?.removeListener(_scheduleCurrentLyricCenter);
+    _lyricViewController = next;
+    _lyricViewController!.addListener(_scheduleCurrentLyricCenter);
+  }
+
+  void _scheduleCurrentLyricCenter({bool animate = true}) {
+    if (_centerScheduled || !mounted) return;
+    _centerScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _centerScheduled = false;
+      if (!mounted) return;
+      await LyricScrollPositioner.center(
+        currentLyricTileKey,
+        animate: animate,
+      );
+    });
+  }
+
   /// 加载当前歌词页面，获取并滚动到当前歌词行的位置
   void _initLyricView() {
     final next = widget.lyric.lines.indexWhere(
@@ -137,20 +164,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     int nextLyricLine = next == -1 ? widget.lyric.lines.length : next;
     lyricTiles = _generateLyricTiles(max(nextLyricLine - 1, 0));
 
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      final targetContext = currentLyricTileKey.currentContext;
-      if (targetContext == null) return;
-
-      /// scroll to curr lyric line
-      if (targetContext.mounted) {
-        Scrollable.ensureVisible(
-          targetContext,
-          alignment: 0.25,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.fastOutSlowIn,
-        );
-      }
-    });
+    _scheduleCurrentLyricCenter();
   }
 
   void _seekToLyricLine(int i) {
@@ -158,6 +172,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     setState(() {
       lyricTiles = _generateLyricTiles(i);
     });
+    _scheduleCurrentLyricCenter();
   }
 
   /// 当前歌词行100%不透明度，其他歌词行18%透明度
@@ -185,44 +200,42 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     lyricTiles = _generateLyricTiles(lyricLine);
     setState(() {});
 
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      final targetContext = currentLyricTileKey.currentContext;
-      if (targetContext == null) return;
-
-      /// scroll to curr lyric line
-      if (targetContext.mounted) {
-        Scrollable.ensureVisible(
-          targetContext,
-          alignment: 0.25,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.fastOutSlowIn,
-        );
-      }
-    });
+    _scheduleCurrentLyricCenter();
   }
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      key: LYRIC_VIEW_KEY,
-      controller: scrollController,
-      slivers: [
-        const SliverFillRemaining(),
-        SliverToBoxAdapter(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: lyricTiles,
-          ),
-        ),
-        const SliverFillRemaining(),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final nextSize = Size(constraints.maxWidth, constraints.maxHeight);
+        if (nextSize.isFinite && nextSize != _lastViewportSize) {
+          _lastViewportSize = nextSize;
+          _scheduleCurrentLyricCenter(animate: false);
+        }
+
+        return CustomScrollView(
+          key: LYRIC_VIEW_KEY,
+          controller: scrollController,
+          slivers: [
+            const SliverFillRemaining(),
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: lyricTiles,
+              ),
+            ),
+            const SliverFillRemaining(),
+          ],
+        );
+      },
     );
   }
 
   @override
   void dispose() {
-    super.dispose();
+    _lyricViewController?.removeListener(_scheduleCurrentLyricCenter);
     lyricLineStreamSubscription.cancel();
     scrollController.dispose();
+    super.dispose();
   }
 }
