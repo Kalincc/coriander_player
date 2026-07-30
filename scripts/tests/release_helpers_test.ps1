@@ -41,6 +41,11 @@ try {
     New-Item -ItemType Directory -Path $emptyRoot | Out-Null
     Assert-Throws { Assert-ReleaseLayout $emptyRoot }
 
+    Invoke-ProcessAndWait -FilePath $env:ComSpec -ArgumentList @('/d', '/c', 'exit 0')
+    Assert-Throws {
+        Invoke-ProcessAndWait -FilePath $env:ComSpec -ArgumentList @('/d', '/c', 'exit 7')
+    }
+
     $completeRoot = Join-Path $fixtureRoot 'complete'
     $requiredFiles = @(
         'coriander_player.exe',

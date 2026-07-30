@@ -29,6 +29,24 @@ function Assert-FileSha256 {
     }
 }
 
+function Invoke-ProcessAndWait {
+    param(
+        [Parameter(Mandatory)][string] $FilePath,
+        [string[]] $ArgumentList = @()
+    )
+
+    $startProcessArguments = @{
+        FilePath = $FilePath
+        ArgumentList = $ArgumentList
+        Wait = $true
+        PassThru = $true
+    }
+    $process = Start-Process @startProcessArguments
+    if ($process.ExitCode -ne 0) {
+        throw "Process '$FilePath' exited with code $($process.ExitCode)."
+    }
+}
+
 function Assert-ReleaseLayout {
     param([Parameter(Mandatory)][string] $Root)
 
