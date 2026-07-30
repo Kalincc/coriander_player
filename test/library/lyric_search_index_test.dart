@@ -28,6 +28,67 @@ void main() {
     RustLib.initMock(api: _TestRustLibApi());
   });
 
+  test('local lyric fingerprint tracks sidecar changes and deletion', () async {
+    final directory =
+        await Directory.systemTemp.createTemp('coriander_lyric_index_');
+    addTearDown(() => directory.delete(recursive: true));
+    final audioFile =
+        File('${directory.path}${Platform.pathSeparator}song.flac');
+    final sidecar = File('${directory.path}${Platform.pathSeparator}song.lrc');
+    await audioFile.writeAsString('audio');
+    await sidecar.writeAsString('[00:01.00]first');
+    await sidecar.setLastModified(
+      DateTime.fromMillisecondsSinceEpoch(1000),
+    );
+    final audio = makeAudio(audioFile.path, 42);
+
+    final initial = await readLocalLyricFingerprint(audio);
+    expect(initial.audioModified, 42);
+    expect(initial.sidecarPath, sidecar.path);
+    expect(initial.sidecarModified, 1000);
+
+    await sidecar.writeAsString('[00:02.00]changed');
+    await sidecar.setLastModified(
+      DateTime.fromMillisecondsSinceEpoch(2000),
+    );
+    final changed = await readLocalLyricFingerprint(audio);
+    expect(changed.sidecarModified, 2000);
+
+    await sidecar.delete();
+    final deleted = await readLocalLyricFingerprint(audio);
+    expect(deleted.sidecarPath, isNull);
+    expect(deleted.sidecarModified, isNull);
+  });
+
+  test('atomic index writes replace valid JSON without temporary files',
+      () async {
+    final directory =
+        await Directory.systemTemp.createTemp('coriander_lyric_index_');
+    addTearDown(() => directory.delete(recursive: true));
+    await writeLyricIndexAtomically(directory, '{"version":0}');
+
+    await writeLyricIndexAtomically(
+      directory,
+      '{"version":1,"entries":{}}',
+    );
+
+    final finalFile = File(
+      '${directory.path}${Platform.pathSeparator}lyric_search_index.json',
+    );
+    expect(jsonDecode(await finalFile.readAsString()), {
+      'version': 1,
+      'entries': <String, Object?>{},
+    });
+    expect(
+      directory.listSync().map((entity) => entity.uri.pathSegments.last),
+      ['lyric_search_index.json'],
+    );
+    expect(
+      File('${finalFile.path}.tmp').existsSync(),
+      isFalse,
+    );
+  });
+
   test('sync reads only new or changed songs and removes deleted songs',
       () async {
     String? persisted;

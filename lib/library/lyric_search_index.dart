@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
+import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/lyric_search_models.dart';
+import 'package:coriander_player/lyric/lrc.dart';
+import 'package:coriander_player/lyric/lyric.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 
 typedef ReadLyricIndex = Future<String?> Function();
 typedef WriteLyricIndex = Future<void> Function(String contents);
@@ -14,6 +19,63 @@ typedef ReadLyricFingerprint = Future<LyricFileFingerprint> Function(
 typedef ReadLocalLyricLines = Future<List<LyricSearchLine>> Function(
   Audio audio,
 );
+
+Future<LyricFileFingerprint> readLocalLyricFingerprint(Audio audio) async {
+  final sidecarPath = path.setExtension(audio.path, '.lrc');
+  final sidecar = File(sidecarPath);
+  final exists = await sidecar.exists();
+  return LyricFileFingerprint(
+    audioModified: audio.modified,
+    sidecarPath: exists ? sidecarPath : null,
+    sidecarModified:
+        exists ? (await sidecar.lastModified()).millisecondsSinceEpoch : null,
+  );
+}
+
+Future<List<LyricSearchLine>> readLocalLyricLines(Audio audio) async {
+  final lyric = await Lrc.fromAudioPath(audio);
+  if (lyric == null) return const [];
+  return lyric.lines
+      .whereType<UnsyncLyricLine>()
+      .where((line) => line.content.trim().isNotEmpty)
+      .map((line) => LyricSearchLine(
+            startMs: line.start.inMilliseconds,
+            text: line.content,
+          ))
+      .toList(growable: false);
+}
+
+Future<void> writeLyricIndexAtomically(
+  Directory directory,
+  String contents,
+) async {
+  final indexFile = File(
+    path.join(directory.path, 'lyric_search_index.json'),
+  );
+  final temporaryFile = File(
+    path.join(directory.path, 'lyric_search_index.json.tmp'),
+  );
+  final backupFile = File(
+    path.join(directory.path, 'lyric_search_index.json.bak'),
+  );
+  var movedCurrentToBackup = false;
+
+  try {
+    await temporaryFile.writeAsString(contents, flush: true);
+    if (await indexFile.exists()) {
+      await indexFile.rename(backupFile.path);
+      movedCurrentToBackup = true;
+    }
+    await temporaryFile.rename(indexFile.path);
+    if (movedCurrentToBackup) await backupFile.delete();
+  } catch (_) {
+    if (movedCurrentToBackup && await backupFile.exists()) {
+      if (await indexFile.exists()) await indexFile.delete();
+      await backupFile.rename(indexFile.path);
+    }
+    rethrow;
+  }
+}
 
 @immutable
 class LyricIndexProgress {
@@ -32,6 +94,7 @@ class LyricIndexProgress {
 
 class LyricSearchIndex extends ChangeNotifier {
   static const int formatVersion = 1;
+  static final LyricSearchIndex instance = LyricSearchIndex.defaults();
 
   final ReadLyricIndex readIndex;
   final WriteLyricIndex writeIndex;
@@ -53,6 +116,23 @@ class LyricSearchIndex extends ChangeNotifier {
     required this.lyricLinesFor,
     this.workerCount = 4,
   });
+
+  factory LyricSearchIndex.defaults() => LyricSearchIndex(
+        readIndex: () async {
+          final directory = await getAppDataDir();
+          final file = File(
+            path.join(directory.path, 'lyric_search_index.json'),
+          );
+          return await file.exists() ? file.readAsString() : null;
+        },
+        writeIndex: (contents) async {
+          final directory = await getAppDataDir();
+          await writeLyricIndexAtomically(directory, contents);
+        },
+        fingerprintFor: readLocalLyricFingerprint,
+        lyricLinesFor: readLocalLyricLines,
+        workerCount: 4,
+      );
 
   Future<void> load() {
     if (_loaded) return Future.value();
@@ -105,6 +185,11 @@ class LyricSearchIndex extends ChangeNotifier {
     final releaseNextSync = Completer<void>();
     _syncTail = releaseNextSync.future;
     return _runSyncAfter(previousSync, releaseNextSync, audioList);
+  }
+
+  Future<void> refreshCurrentLibrary() async {
+    await load();
+    unawaited(sync(AudioLibrary.instance.audioCollection));
   }
 
   Future<void> _runSyncAfter(
