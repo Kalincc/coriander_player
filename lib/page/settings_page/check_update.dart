@@ -52,11 +52,16 @@ class _CheckForUpdateState extends State<CheckForUpdate> {
                   final currentVersion = ForkReleaseVersion.parse(
                     AppSettings.version,
                   );
-                  if (newest != null && newestVersion! > currentVersion) {
+                  final newestRelease = newest;
+                  final candidateVersion = newestVersion;
+                  if (newestRelease != null &&
+                      candidateVersion != null &&
+                      candidateVersion > currentVersion) {
                     if (context.mounted) {
                       showDialog(
                         context: context,
-                        builder: (context) => NewestUpdateView(release: newest),
+                        builder: (context) =>
+                            NewestUpdateView(release: newestRelease),
                       );
                     }
                   } else {
