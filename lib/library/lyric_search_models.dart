@@ -70,11 +70,11 @@ class LyricIndexEntry {
   final LyricFileFingerprint fingerprint;
   final List<LyricSearchLine> lines;
 
-  const LyricIndexEntry({
+  LyricIndexEntry({
     required this.audioPath,
     required this.fingerprint,
-    required this.lines,
-  });
+    required List<LyricSearchLine> lines,
+  }) : lines = List.unmodifiable(lines);
 
   Map<String, Object> toJson() => {
         'audioPath': audioPath,
@@ -114,7 +114,10 @@ class LyricSearchMatch {
   final Audio audio;
   final List<LyricSearchLine> lines;
 
-  const LyricSearchMatch({required this.audio, required this.lines});
+  LyricSearchMatch({
+    required this.audio,
+    required List<LyricSearchLine> lines,
+  }) : lines = List.unmodifiable(lines);
 }
 
 List<LyricSearchMatch> searchLyricEntries({

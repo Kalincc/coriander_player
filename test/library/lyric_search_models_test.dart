@@ -24,14 +24,14 @@ void main() {
   });
 
   test('entry JSON round-trips without song metadata', () {
-    const entry = LyricIndexEntry(
+    final entry = LyricIndexEntry(
       audioPath: r'C:\music\song.flac',
-      fingerprint: LyricFileFingerprint(
+      fingerprint: const LyricFileFingerprint(
         audioModified: 100,
         sidecarPath: r'C:\music\song.lrc',
         sidecarModified: 120,
       ),
-      lines: [LyricSearchLine(startMs: 12000, text: 'Hello 涓栫晫')],
+      lines: const [LyricSearchLine(startMs: 12000, text: 'Hello 涓栫晫')],
     );
     expect(LyricIndexEntry.fromJson(entry.toJson()), entry);
     expect(entry.toJson().containsKey('title'), isFalse);
@@ -77,6 +77,49 @@ void main() {
         isEmpty);
     expect(searchLyricEntries(query: 'x', entries: entries, audios: [song]),
         isEmpty);
+  });
+
+  test('entry snapshots lyric lines as unmodifiable', () {
+    final sourceLines = [
+      const LyricSearchLine(startMs: 1000, text: 'first line'),
+    ];
+    final entry = LyricIndexEntry(
+      audioPath: 'song.flac',
+      fingerprint: const LyricFileFingerprint(audioModified: 100),
+      lines: sourceLines,
+    );
+
+    sourceLines.add(const LyricSearchLine(startMs: 2000, text: 'second line'));
+
+    expect(entry.lines,
+        [const LyricSearchLine(startMs: 1000, text: 'first line')]);
+    expect(
+      () => entry.lines.add(
+        const LyricSearchLine(startMs: 3000, text: 'third line'),
+      ),
+      throwsUnsupportedError,
+    );
+  });
+
+  test('match snapshots lyric lines as unmodifiable', () {
+    final sourceLines = [
+      const LyricSearchLine(startMs: 1000, text: 'first line'),
+    ];
+    final match = LyricSearchMatch(
+      audio: audio('song.flac'),
+      lines: sourceLines,
+    );
+
+    sourceLines.add(const LyricSearchLine(startMs: 2000, text: 'second line'));
+
+    expect(match.lines,
+        [const LyricSearchLine(startMs: 1000, text: 'first line')]);
+    expect(
+      () => match.lines.add(
+        const LyricSearchLine(startMs: 3000, text: 'third line'),
+      ),
+      throwsUnsupportedError,
+    );
   });
 }
 
