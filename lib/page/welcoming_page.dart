@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/component/build_index_state_view.dart';
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:filepicker_windows/filepicker_windows.dart';
 import 'package:flutter/material.dart';
@@ -90,6 +91,7 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                         AppSettings.instance.saveSettings(),
                         AudioLibrary.initFromIndex(),
                       ]);
+                      await LyricSearchIndex.instance.refreshCurrentLibrary();
                       if (context.mounted) {
                         context.go(app_paths.AUDIOS_PAGE);
                       }
