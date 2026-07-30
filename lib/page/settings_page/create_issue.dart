@@ -1,9 +1,8 @@
 import 'package:coriander_player/component/settings_tile.dart';
 import 'package:coriander_player/hotkeys_helper.dart';
-import 'package:coriander_player/page/settings_page/cpfeedback_key.dart';
+import 'package:coriander_player/page/settings_page/issue_report.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
-import 'package:github/github.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:go_router/go_router.dart';
 import 'package:coriander_player/app_paths.dart' as app_paths;
@@ -39,37 +38,21 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
 
   Future<void> createIssue() async {
     submitBtnController.update(WidgetState.disabled, true);
-    final cpfeedback = GitHub(
-      auth: const Authentication.withToken(CPFEEDBACK_KEY),
-    );
-    final issueBodyBuilder = StringBuffer();
-    issueBodyBuilder
-      ..writeln("## 描述")
-      ..writeln(descEditingController.text)
-      ..writeln("## 日志")
-      ..writeln("```")
-      ..writeln(logEditingController.text)
-      ..writeln("```");
-
-    final issue = IssueRequest(
-      title: titleEditingController.text,
-      body: issueBodyBuilder.toString(),
-    );
 
     try {
-      await cpfeedback.issues.create(
-        RepositorySlug("Ferry-200", "coriander_player"),
-        issue,
+      final uri = buildIssueReportUri(
+        title: titleEditingController.text,
+        description: descEditingController.text,
+        log: logEditingController.text,
       );
-
-      showTextOnSnackBar("创建成功");
+      final opened = await launchInBrowser(uri: uri.toString());
+      showTextOnSnackBar(opened ? "已在浏览器打开" : "无法打开浏览器");
     } catch (err, trace) {
       showTextOnSnackBar(err.toString());
       LOGGER.e(err, stackTrace: trace);
+    } finally {
+      submitBtnController.update(WidgetState.disabled, false);
     }
-
-    submitBtnController.update(WidgetState.disabled, false);
-    cpfeedback.dispose();
   }
 
   @override
