@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -43,6 +44,7 @@ class LyricSearchIndex extends ChangeNotifier {
 
   bool _loaded = false;
   Future<void>? _loadFuture;
+  Future<void> _syncTail = Future.value();
 
   LyricSearchIndex({
     required this.readIndex,
@@ -65,6 +67,11 @@ class LyricSearchIndex extends ChangeNotifier {
         final envelope = Map<String, dynamic>.from(
           jsonDecode(contents) as Map,
         );
+        if (envelope.length != 2 ||
+            !envelope.containsKey('version') ||
+            !envelope.containsKey('entries')) {
+          throw const FormatException('Invalid lyric index envelope');
+        }
         if (envelope['version'] != formatVersion) {
           throw FormatException(
             'Unsupported lyric index version: ${envelope['version']}',
@@ -92,8 +99,28 @@ class LyricSearchIndex extends ChangeNotifier {
     }
   }
 
-  Future<void> sync(Iterable<Audio> audios) async {
+  Future<void> sync(Iterable<Audio> audios) {
     final audioList = audios.toList(growable: false);
+    final previousSync = _syncTail;
+    final releaseNextSync = Completer<void>();
+    _syncTail = releaseNextSync.future;
+    return _runSyncAfter(previousSync, releaseNextSync, audioList);
+  }
+
+  Future<void> _runSyncAfter(
+    Future<void> previousSync,
+    Completer<void> releaseNextSync,
+    List<Audio> audioList,
+  ) async {
+    await previousSync;
+    try {
+      await _sync(audioList);
+    } finally {
+      releaseNextSync.complete();
+    }
+  }
+
+  Future<void> _sync(List<Audio> audioList) async {
     final availablePaths = audioList.map((audio) => audio.path).toSet();
     entries.removeWhere((path, _) => !availablePaths.contains(path));
 

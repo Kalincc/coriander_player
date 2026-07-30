@@ -194,6 +194,30 @@ void main() {
     expect(notifications, 1);
   });
 
+  test('load rejects an envelope with unexpected top-level keys', () async {
+    final index = LyricSearchIndex(
+      readIndex: () async => jsonEncode({
+        'version': 1,
+        'entries': {
+          'song.flac': LyricIndexEntry(
+            audioPath: 'song.flac',
+            fingerprint: const LyricFileFingerprint(audioModified: 1),
+            lines: const [LyricSearchLine(startMs: 0, text: 'must reject')],
+          ).toJson(),
+        },
+        'unexpected': true,
+      }),
+      writeIndex: (_) async {},
+      fingerprintFor: (_) async => const LyricFileFingerprint(audioModified: 1),
+      lyricLinesFor: (_) async => const [],
+    );
+
+    await index.load();
+
+    expect(index.entries, isEmpty);
+    expect(index.progress.error, isA<FormatException>());
+  });
+
   test('deletion-only sync persists the exact versioned envelope', () async {
     String? persisted = jsonEncode({
       'version': 1,
@@ -259,6 +283,96 @@ void main() {
     gates[2].complete();
     await syncing;
 
+    expect(maxActive, 2);
+  });
+
+  test('a later deletion-only sync cannot be overtaken by an older sync',
+      () async {
+    final lyricStarted = Completer<void>();
+    final releaseLyric = Completer<void>();
+    final persistedEntries = <Set<String>>[];
+    final index = LyricSearchIndex(
+      readIndex: () async => null,
+      writeIndex: (contents) async {
+        final envelope = jsonDecode(contents) as Map<String, dynamic>;
+        final encodedEntries = envelope['entries'] as Map<String, dynamic>;
+        persistedEntries.add(encodedEntries.keys.toSet());
+      },
+      fingerprintFor: (audio) async =>
+          LyricFileFingerprint(audioModified: audio.modified),
+      lyricLinesFor: (_) async {
+        lyricStarted.complete();
+        await releaseLyric.future;
+        return const [LyricSearchLine(startMs: 0, text: 'indexed')];
+      },
+      workerCount: 1,
+    );
+    await index.load();
+
+    final olderSync = index.sync([makeAudio('old.flac', 1)]);
+    await lyricStarted.future;
+    final newerSync = index.sync(const []);
+    var newerCompleted = false;
+    newerSync.then((_) => newerCompleted = true);
+    await Future<void>.delayed(Duration.zero);
+    final completedBeforeOlderSync = newerCompleted;
+
+    releaseLyric.complete();
+    await Future.wait([olderSync, newerSync]);
+
+    expect(completedBeforeOlderSync, isFalse);
+    expect(index.entries, isEmpty);
+    expect(persistedEntries, [
+      {'old.flac'},
+      <String>{},
+    ]);
+  });
+
+  test('overlapping sync calls share the service worker bound', () async {
+    var active = 0;
+    var maxActive = 0;
+    final gates = <Completer<void>>[];
+    final firstTwoStarted = Completer<void>();
+    final allFourStarted = Completer<void>();
+    final index = LyricSearchIndex(
+      readIndex: () async => null,
+      writeIndex: (_) async {},
+      fingerprintFor: (audio) async =>
+          LyricFileFingerprint(audioModified: audio.modified),
+      lyricLinesFor: (_) async {
+        active++;
+        if (active > maxActive) maxActive = active;
+        final gate = Completer<void>();
+        gates.add(gate);
+        if (gates.length == 2) firstTwoStarted.complete();
+        if (gates.length == 4) allFourStarted.complete();
+        await gate.future;
+        active--;
+        return const [];
+      },
+      workerCount: 2,
+    );
+    await index.load();
+
+    final firstSync = index.sync([
+      makeAudio('first-a.flac', 1),
+      makeAudio('first-b.flac', 1),
+    ]);
+    await firstTwoStarted.future;
+    final secondSync = index.sync([
+      makeAudio('second-a.flac', 1),
+      makeAudio('second-b.flac', 1),
+    ]);
+    await Future<void>.delayed(Duration.zero);
+    final activeBeforeFirstCompleted = active;
+    gates[0].complete();
+    gates[1].complete();
+    await allFourStarted.future;
+    gates[2].complete();
+    gates[3].complete();
+    await Future.wait([firstSync, secondSync]);
+
+    expect(activeBeforeFirstCompleted, 2);
     expect(maxActive, 2);
   });
 
