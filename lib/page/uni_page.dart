@@ -111,6 +111,7 @@ class UniPage<T> extends StatefulWidget {
     this.locateTo,
     this.multiSelectController,
     this.multiSelectViewActions,
+    this.emptyState,
   });
 
   final PagePreference pref;
@@ -134,6 +135,7 @@ class UniPage<T> extends StatefulWidget {
 
   final MultiSelectController<T>? multiSelectController;
   final List<Widget>? multiSelectViewActions;
+  final Widget? emptyState;
 
   @override
   State<UniPage<T>> createState() => _UniPageState<T>();
@@ -250,35 +252,37 @@ class _UniPageState<T> extends State<UniPage<T>> {
           : multiSelectController.enableMultiSelectView
               ? widget.multiSelectViewActions!
               : actions,
-      body: Material(
-        type: MaterialType.transparency,
-        child: switch (currContentView) {
-          ContentView.list => ListView.builder(
-              controller: scrollController,
-              padding: const EdgeInsets.only(bottom: 96.0),
-              itemCount: widget.contentList.length,
-              itemExtent: 64,
-              itemBuilder: (context, i) => widget.contentBuilder(
-                context,
-                widget.contentList[i],
-                i,
-                multiSelectController,
-              ),
+      body: widget.contentList.isEmpty && widget.emptyState != null
+          ? widget.emptyState!
+          : Material(
+              type: MaterialType.transparency,
+              child: switch (currContentView) {
+                ContentView.list => ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.only(bottom: 96.0),
+                    itemCount: widget.contentList.length,
+                    itemExtent: 64,
+                    itemBuilder: (context, i) => widget.contentBuilder(
+                      context,
+                      widget.contentList[i],
+                      i,
+                      multiSelectController,
+                    ),
+                  ),
+                ContentView.table => GridView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.only(bottom: 96.0),
+                    gridDelegate: gridDelegate,
+                    itemCount: widget.contentList.length,
+                    itemBuilder: (context, i) => widget.contentBuilder(
+                      context,
+                      widget.contentList[i],
+                      i,
+                      multiSelectController,
+                    ),
+                  ),
+              },
             ),
-          ContentView.table => GridView.builder(
-              controller: scrollController,
-              padding: const EdgeInsets.only(bottom: 96.0),
-              gridDelegate: gridDelegate,
-              itemCount: widget.contentList.length,
-              itemBuilder: (context, i) => widget.contentBuilder(
-                context,
-                widget.contentList[i],
-                i,
-                multiSelectController,
-              ),
-            ),
-        },
-      ),
     );
   }
 }
