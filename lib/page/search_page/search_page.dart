@@ -1,23 +1,31 @@
 import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/lyric_search_index.dart';
+import 'package:coriander_player/library/lyric_search_models.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 class UnionSearchResult {
-  String query;
+  final String query;
 
-  List<Audio> audios = [];
-  List<Artist> artists = [];
-  List<Album> album = [];
+  final List<Audio> audios = [];
+  final List<Artist> artists = [];
+  final List<Album> album = [];
+  final List<LyricSearchMatch> lyrics = [];
 
   UnionSearchResult(this.query);
 
-  static UnionSearchResult search(String query) {
-    final result = UnionSearchResult(query);
+  static UnionSearchResult search(
+    String query, {
+    LyricSearchIndex? lyricIndex,
+  }) {
+    final normalizedQuery = query.trim();
+    final result = UnionSearchResult(normalizedQuery);
+    if (normalizedQuery.isEmpty) return result;
 
-    final queryInLowerCase = query.toLowerCase();
+    final queryInLowerCase = normalizedQuery.toLowerCase();
     final library = AudioLibrary.instance;
 
     for (int i = 0; i < library.audioCollection.length; i++) {
@@ -39,6 +47,12 @@ class UnionSearchResult {
         result.album.add(item);
       }
     }
+    result.lyrics.addAll(
+      (lyricIndex ?? LyricSearchIndex.instance).search(
+        normalizedQuery,
+        library.audioCollection,
+      ),
+    );
     return result;
   }
 }
@@ -81,15 +95,17 @@ class SearchPage extends StatelessWidget {
                         padding: EdgeInsets.only(right: 12.0),
                         child: Icon(Symbols.search),
                       ),
-                      hintText: "搜索歌曲、艺术家、专辑",
+                      hintText: "搜索歌曲、艺术家、专辑、歌词",
                       border: OutlineInputBorder(),
                     ),
 
                     /// when 'enter' is pressed
                     onSubmitted: (String query) {
+                      final normalizedQuery = query.trim();
+                      if (normalizedQuery.isEmpty) return;
                       context.push(
                         app_paths.SEARCH_RESULT_PAGE,
-                        extra: UnionSearchResult.search(query),
+                        extra: normalizedQuery,
                       );
                     },
                   ),

@@ -226,9 +226,9 @@ class Entry extends StatelessWidget {
               GoRoute(
                 path: "result",
                 pageBuilder: (context, state) {
-                  final result = state.extra as UnionSearchResult;
+                  final query = state.extra as String;
                   return SlideTransitionPage(
-                    child: SearchResultPage(searchResult: result),
+                    child: SearchResultPage(initialQuery: query),
                   );
                 },
               ),
