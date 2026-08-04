@@ -50,6 +50,21 @@ void main() {
     );
   });
 
+  test('artist filtering and album selection normalize Traditional names', () {
+    final allAlbums = [Album(name: 'All')];
+    final artist = Artist(name: '张学友')..albumsMap['Only'] = Album(name: 'Only');
+
+    expect(filterArtistNames(['张学友'], '張學友'), ['张学友']);
+    expect(
+      albumsForArtist(
+        allAlbums: allAlbums,
+        artists: {'张学友': artist},
+        artistName: '張學友',
+      ),
+      artist.albumsMap.values,
+    );
+  });
+
   testWidgets('dialog searches, selects an artist, and resets to no category',
       (tester) async {
     String? selected;
