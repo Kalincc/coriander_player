@@ -1,8 +1,8 @@
 # Final fix report: Traditional/Simplified artist merge
 
-Date: 2026-08-04  
-Branch: `agent/merge-traditional-simplified-artists`  
-Reviewed starting range: `3486e28..2b3afda`  
+Date: 2026-08-04
+Branch: `agent/merge-traditional-simplified-artists`
+Reviewed starting range: `3486e28..2b3afda`
 Fix commit: `d6636f7a1bdcd42580c7475a303508fe7794f2ef`
 
 ## Outcome
