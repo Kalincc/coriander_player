@@ -175,6 +175,7 @@ git commit -m "feat: merge traditional and simplified artist collections"
 ### Task 3: Route every artist UI lookup and query through the canonical API
 
 **Files:**
+- Modify: `lib/component/audio_tile.dart:47-55`
 - Modify: `lib/page/audio_detail_page.dart:17-22`
 - Modify: `lib/page/now_playing_page/page.dart:182-194`
 - Modify: `lib/page/album_artist_filter.dart:6-23`
@@ -220,9 +221,11 @@ Expected: the Traditional query/selection assertions fail before the page helper
 Apply these focused changes:
 
 ```dart
-// audio_detail_page.dart and now_playing_page/page.dart
+// audio_tile.dart, audio_detail_page.dart, and now_playing_page/page.dart
 final artist = AudioLibrary.instance.artistForName(rawArtistName)!;
 ```
+
+In the shared audio-tile artist menu, resolve each raw split artist through `artistForName`, navigate with that canonical object, and display `artist.name`.
 
 In the now-playing artist menu, display `artist.name` so the selected artist label is Simplified rather than the raw metadata spelling.
 
@@ -241,7 +244,7 @@ Expected: all existing tests plus the new Traditional/Simplified query assertion
 - [ ] **Step 5: Commit the UI/query integration**
 
 ```powershell
-git add lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart test/page/album_artist_filter_test.dart test/page/search_result_page_test.dart
+git add lib/component/audio_tile.dart lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart test/page/album_artist_filter_test.dart test/page/search_result_page_test.dart
 git commit -m "feat: use canonical artist names across UI lookups"
 ```
 
@@ -261,7 +264,7 @@ git commit -m "feat: use canonical artist names across UI lookups"
 Run:
 
 ```powershell
-dart format --output=none --set-exit-if-changed lib/library/artist_name_normalizer.dart lib/library/audio_library.dart lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart test/library/artist_name_normalizer_test.dart test/library/audio_library_artist_merge_test.dart test/page/album_artist_filter_test.dart test/page/search_result_page_test.dart
+dart format --output=none --set-exit-if-changed lib/library/artist_name_normalizer.dart lib/library/audio_library.dart lib/component/audio_tile.dart lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart test/library/artist_name_normalizer_test.dart test/library/audio_library_artist_merge_test.dart test/page/album_artist_filter_test.dart test/page/search_result_page_test.dart
 flutter analyze
 ```
 
