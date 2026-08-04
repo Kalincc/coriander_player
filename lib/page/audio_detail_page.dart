@@ -17,7 +17,7 @@ class AudioDetailPage extends StatelessWidget {
     final artists = List.generate(
       audio.splitedArtists.length,
       (i) {
-        return AudioLibrary.instance.artistCollection[audio.splitedArtists[i]]!;
+        return AudioLibrary.instance.artistForName(audio.splitedArtists[i])!;
       },
     );
     final album = AudioLibrary.instance.albumCollection[audio.album]!;
