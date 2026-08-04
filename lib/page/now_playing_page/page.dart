@@ -175,14 +175,15 @@ class _NowPlayingMoreAction extends StatelessWidget {
       );
     }
 
+    final artists = AudioLibrary.instance.artistsForAudio(nowPlaying);
+
     return MenuAnchor(
       menuChildren: [
         SubmenuButton(
           menuChildren: List.generate(
-            nowPlaying.splitedArtists.length,
+            artists.length,
             (i) {
-              final artist = AudioLibrary.instance
-                  .artistForName(nowPlaying.splitedArtists[i])!;
+              final artist = artists[i];
               return MenuItemButton(
                 onPressed: () => context.pushReplacement(
                   app_paths.ARTIST_DETAIL_PAGE,

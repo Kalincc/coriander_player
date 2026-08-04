@@ -18,9 +18,8 @@ List<Album> albumsForArtist({
   required Map<String, Artist> artists,
   required String? artistName,
 }) {
-  final artist = artistName == null
-      ? null
-      : artists[normalizeArtistName(artistName.trim())];
+  final artist =
+      artistName == null ? null : artists[normalizeArtistName(artistName)];
   return artist == null
       ? List<Album>.from(allAlbums)
       : List<Album>.from(artist.albumsMap.values);

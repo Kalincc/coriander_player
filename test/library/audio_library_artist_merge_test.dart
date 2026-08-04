@@ -53,6 +53,27 @@ void main() {
     expect(library.artistForName('YOASOBI')!.works, hasLength(1));
   });
 
+  test('deduplicates canonical artist relationships within one audio', () {
+    final audio = testAudio(
+      artist: '張學友/张学友',
+      album: 'Collision Album',
+    );
+    final library = AudioLibrary.forTesting([audio]);
+
+    expect(audio.artist, '張學友/张学友');
+    expect(audio.splitedArtists, ['張學友', '张学友']);
+    expect(library.artistCollection.keys, ['张学友']);
+    expect(library.artistCollection['张学友']!.works, [same(audio)]);
+    expect(
+      library.albumCollection['Collision Album']!.artistsMap.keys,
+      ['张学友'],
+    );
+    expect(
+      library.artistsForAudio(audio).map((artist) => artist.name),
+      ['张学友'],
+    );
+  });
+
   test('rebuilding collections does not duplicate relationships', () {
     final library = AudioLibrary.forTesting([
       testAudio(artist: '張學友', album: 'Album'),

@@ -14,12 +14,7 @@ class AudioDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final artists = List.generate(
-      audio.splitedArtists.length,
-      (i) {
-        return AudioLibrary.instance.artistForName(audio.splitedArtists[i])!;
-      },
-    );
+    final artists = AudioLibrary.instance.artistsForAudio(audio);
     final album = AudioLibrary.instance.albumCollection[audio.album]!;
     const space = SizedBox(height: 12.0);
 

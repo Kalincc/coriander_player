@@ -34,6 +34,7 @@ class AudioTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final audio = playlist[audioIndex];
+    final artists = AudioLibrary.instance.artistsForAudio(audio);
 
     return MenuAnchor(
       consumeOutsideTap: true,
@@ -41,10 +42,9 @@ class AudioTile extends StatelessWidget {
         /// artists
         SubmenuButton(
           menuChildren: List.generate(
-            audio.splitedArtists.length,
+            artists.length,
             (i) {
-              final artist =
-                  AudioLibrary.instance.artistForName(audio.splitedArtists[i])!;
+              final artist = artists[i];
               return MenuItemButton(
                 onPressed: () {
                   context.push(
