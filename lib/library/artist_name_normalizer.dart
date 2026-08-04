@@ -1,7 +1,5 @@
-import 'package:opencc/opencc.dart';
-
-final _traditionalToSimplified = ZhConverter('t2s');
+import 'package:pinyin/pinyin.dart';
 
 String normalizeArtistName(String rawName) {
-  return _traditionalToSimplified.convert(rawName);
+  return ChineseHelper.convertToSimplifiedChinese(rawName);
 }
