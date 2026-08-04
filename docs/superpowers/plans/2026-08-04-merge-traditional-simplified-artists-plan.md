@@ -4,9 +4,9 @@
 
 **Goal:** Merge Traditional and Simplified Chinese artist names globally at runtime, display the Simplified name, and keep every existing artist lookup and filter path working.
 
-**Architecture:** Add a small synchronous normalizer backed by `opencc` T2S conversion. `AudioLibrary` will build `artistCollection` and `Album.artistsMap` with normalized keys while retaining raw-name aliases and exposing one `artistForName` lookup. UI search and selection helpers will normalize incoming queries before querying the canonical collections; audio metadata will remain unchanged.
+**Architecture:** Add a small synchronous normalizer backed by the existing `pinyin` package's T2S conversion tables. `AudioLibrary` will build `artistCollection` and `Album.artistsMap` with normalized keys while retaining raw-name aliases and exposing one `artistForName` lookup. UI search and selection helpers will normalize incoming queries before querying the canonical collections; audio metadata will remain unchanged.
 
-**Tech Stack:** Flutter/Dart, `opencc: ^1.1.0` (`ZhConverter('t2s')`), existing `AudioLibrary`/`Artist`/`Album` models, Flutter unit/widget tests, GitHub Actions Windows CI.
+**Tech Stack:** Flutter/Dart, existing `pinyin: ^3.3.0` (`ChineseHelper.convertToSimplifiedChinese`), existing `AudioLibrary`/`Artist`/`Album` models, Flutter unit/widget tests, GitHub Actions Windows CI.
 
 ## Global Constraints
 
@@ -14,7 +14,7 @@
 - Display the Simplified canonical artist name and leave audio-file metadata untouched.
 - Preserve existing artist separators, album sorting, and the “无分类” album mode.
 - Keep the conversion synchronous and non-blocking; unknown characters must pass through unchanged.
-- Verify the Windows/native-assets dependency path through the existing GitHub Actions workflow because the local Rust/Windows toolchain is intentionally not required.
+- Keep the normalizer pure Dart and verify the existing Windows workflow; no native-assets or extra SDK setup is required.
 
 ---
 
@@ -28,7 +28,7 @@
 
 **Interfaces:**
 - Produces `String normalizeArtistName(String rawName)` for all later collection and UI code.
-- Uses `ZhConverter('t2s')` internally; callers do not depend on the `opencc` API.
+- Uses `ChineseHelper.convertToSimplifiedChinese` internally; callers do not depend on the `pinyin` API.
 
 - [ ] **Step 1: Write the failing normalizer tests**
 
@@ -63,21 +63,13 @@ Expected: compilation failure because the normalizer file/function and dependenc
 
 - [ ] **Step 3: Add the dependency and minimal implementation**
 
-Add this dependency to `pubspec.yaml`:
-
-```yaml
-opencc: ^1.1.0
-```
-
-Run `flutter pub get` to update `pubspec.lock`, then create the normalizer with a single converter instance:
+The project already depends on `pinyin: ^3.3.0`, whose bundled conversion tables provide the required pure-Dart T2S behavior. Do not add another package. Create the normalizer as a thin wrapper:
 
 ```dart
-import 'package:opencc/opencc.dart';
-
-final _traditionalToSimplified = ZhConverter('t2s');
+import 'package:pinyin/pinyin.dart';
 
 String normalizeArtistName(String rawName) {
-  return _traditionalToSimplified.convert(rawName);
+  return ChineseHelper.convertToSimplifiedChinese(rawName);
 }
 ```
 
@@ -91,12 +83,12 @@ Run:
 flutter test test/library/artist_name_normalizer_test.dart
 ```
 
-Expected: all normalizer tests pass and the native-assets build completes on the current Flutter SDK.
+Expected: all normalizer tests pass without native build steps.
 
 - [ ] **Step 5: Commit the self-contained normalizer change**
 
 ```powershell
-git add pubspec.yaml pubspec.lock lib/library/artist_name_normalizer.dart test/library/artist_name_normalizer_test.dart
+git add lib/library/artist_name_normalizer.dart test/library/artist_name_normalizer_test.dart
 git commit -m "feat: add traditional artist name normalization"
 ```
 
@@ -183,6 +175,7 @@ git commit -m "feat: merge traditional and simplified artist collections"
 ### Task 3: Route every artist UI lookup and query through the canonical API
 
 **Files:**
+- Modify: `lib/component/audio_tile.dart:47-55`
 - Modify: `lib/page/audio_detail_page.dart:17-22`
 - Modify: `lib/page/now_playing_page/page.dart:182-194`
 - Modify: `lib/page/album_artist_filter.dart:6-23`
@@ -228,9 +221,11 @@ Expected: the Traditional query/selection assertions fail before the page helper
 Apply these focused changes:
 
 ```dart
-// audio_detail_page.dart and now_playing_page/page.dart
+// audio_tile.dart, audio_detail_page.dart, and now_playing_page/page.dart
 final artist = AudioLibrary.instance.artistForName(rawArtistName)!;
 ```
+
+In the shared audio-tile artist menu, resolve each raw split artist through `artistForName`, navigate with that canonical object, and display `artist.name`.
 
 In the now-playing artist menu, display `artist.name` so the selected artist label is Simplified rather than the raw metadata spelling.
 
@@ -249,7 +244,7 @@ Expected: all existing tests plus the new Traditional/Simplified query assertion
 - [ ] **Step 5: Commit the UI/query integration**
 
 ```powershell
-git add lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart test/page/album_artist_filter_test.dart test/page/search_result_page_test.dart
+git add lib/component/audio_tile.dart lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart test/page/album_artist_filter_test.dart test/page/search_result_page_test.dart
 git commit -m "feat: use canonical artist names across UI lookups"
 ```
 
@@ -257,11 +252,11 @@ git commit -m "feat: use canonical artist names across UI lookups"
 
 **Files:**
 - Inspect: `.github/workflows/windows_ci.yml`
-- Modify only if required by the `opencc` native-assets setup: `.github/workflows/windows_ci.yml`
+- Modify only if a Windows workflow regression is found: `.github/workflows/windows_ci.yml`
 - Test: all files under `test/` plus the new normalizer and library merge tests
 
 **Interfaces:**
-- No new production API; this task verifies the complete feature boundary and native-assets compatibility.
+- No new production API; this task verifies the complete feature boundary and pure-Dart conversion compatibility.
 - The existing Windows workflow remains the source of truth for `flutter build windows` because local Rust/Windows builds are not required.
 
 - [ ] **Step 1: Run formatting and static analysis**
@@ -269,11 +264,11 @@ git commit -m "feat: use canonical artist names across UI lookups"
 Run:
 
 ```powershell
-dart format --output=none --set-exit-if-changed lib/library/artist_name_normalizer.dart lib/library/audio_library.dart lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart test/library/artist_name_normalizer_test.dart test/library/audio_library_artist_merge_test.dart test/page/album_artist_filter_test.dart test/page/search_result_page_test.dart
-flutter analyze
+dart format --output=none --set-exit-if-changed lib/library/artist_name_normalizer.dart lib/library/audio_library.dart lib/component/audio_tile.dart lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart test/library/artist_name_normalizer_test.dart test/library/audio_library_artist_merge_test.dart test/page/album_artist_filter_test.dart test/page/search_result_page_test.dart
+flutter analyze --no-fatal-infos lib/library/artist_name_normalizer.dart lib/library/audio_library.dart lib/component/audio_tile.dart lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart
 ```
 
-Expected: formatting reports no changes and analysis exits with zero errors.
+Expected: formatting reports no changes and feature-boundary analysis exits with zero errors. A full-project `flutter analyze` is known to be blocked by unrelated baseline sources/configuration and is not part of this local, reduced validation gate.
 
 - [ ] **Step 2: Run the complete targeted test set**
 
@@ -285,9 +280,9 @@ flutter test --no-pub test/library/artist_name_normalizer_test.dart test/library
 
 Expected: all tests pass, including the pre-existing lyric and album-filter regressions.
 
-- [ ] **Step 3: Verify the native-assets Windows workflow**
+- [ ] **Step 3: Inspect the Windows workflow**
 
-Run the existing GitHub Actions Windows workflow for the implementation branch. Confirm that `flutter pub get` resolves `opencc`, `flutter build windows` completes, and the packaging step still finds the Windows release output. If the workflow fails specifically because CMake/native-assets is not on `PATH`, add the smallest explicit CMake setup step to `.github/workflows/windows_ci.yml`, rerun the workflow, and keep unrelated release steps unchanged.
+Inspect the existing GitHub Actions Windows workflow. Confirm that it still runs `flutter pub get`, `flutter build windows`, BASS placement, and release-artifact upload. Dispatching the manual workflow requires a remote implementation branch; do not push or create a PR during this local execution unless separately authorized. Record remote CI as pending until that authorization exists.
 
 - [ ] **Step 4: Inspect the final diff and commit validation-only changes**
 
@@ -301,11 +296,11 @@ git diff --stat upstream/main...HEAD
 
 Expected: no whitespace errors, only the normalizer/dependency, collection, page lookup, and test changes are present; no audio files or generated build artifacts are tracked.
 
-If the workflow required a CI-only CMake adjustment, commit it with:
+If the workflow required a CI-only adjustment, commit it with:
 
 ```powershell
 git add .github/workflows/windows_ci.yml
-git commit -m "ci: prepare Windows native-assets build"
+git commit -m "ci: adjust Windows workflow"
 ```
 
 ## Final acceptance checklist
@@ -316,5 +311,5 @@ git commit -m "ci: prepare Windows native-assets build"
 - [ ] Artist list, artist details, album filter, song details, now-playing menu, and global artist search use the canonical object.
 - [ ] Traditional and Simplified artist queries both match.
 - [ ] Audio tags and persisted index data remain unchanged.
-- [ ] `flutter analyze` and the focused test set pass.
-- [ ] GitHub Actions Windows packaging passes with the native-assets dependency.
+- [ ] Feature-boundary `flutter analyze --no-fatal-infos` and the focused test set pass; unrelated full-project analyzer failures are documented.
+- [ ] Windows workflow structure remains intact; remote packaging execution is pending an authorized branch push/PR.

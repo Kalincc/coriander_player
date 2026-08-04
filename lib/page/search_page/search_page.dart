@@ -1,6 +1,7 @@
 import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/artist_name_normalizer.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/library/lyric_search_models.dart';
 import 'package:flutter/material.dart';
@@ -26,6 +27,8 @@ class UnionSearchResult {
     if (normalizedQuery.isEmpty) return result;
 
     final queryInLowerCase = normalizedQuery.toLowerCase();
+    final artistQueryInLowerCase =
+        normalizeArtistName(normalizedQuery).toLowerCase();
     final library = AudioLibrary.instance;
 
     for (int i = 0; i < library.audioCollection.length; i++) {
@@ -37,7 +40,7 @@ class UnionSearchResult {
     }
 
     for (Artist item in library.artistCollection.values) {
-      if (item.name.toLowerCase().contains(queryInLowerCase)) {
+      if (item.name.toLowerCase().contains(artistQueryInLowerCase)) {
         result.artists.add(item);
       }
     }

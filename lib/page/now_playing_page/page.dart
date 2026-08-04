@@ -175,23 +175,24 @@ class _NowPlayingMoreAction extends StatelessWidget {
       );
     }
 
+    final artists = AudioLibrary.instance.artistsForAudio(nowPlaying);
+
     return MenuAnchor(
       menuChildren: [
         SubmenuButton(
           menuChildren: List.generate(
-            nowPlaying.splitedArtists.length,
-            (i) => MenuItemButton(
-              onPressed: () {
-                final Artist artist = AudioLibrary
-                    .instance.artistCollection[nowPlaying.splitedArtists[i]]!;
-                context.pushReplacement(
+            artists.length,
+            (i) {
+              final artist = artists[i];
+              return MenuItemButton(
+                onPressed: () => context.pushReplacement(
                   app_paths.ARTIST_DETAIL_PAGE,
                   extra: artist,
-                );
-              },
-              leadingIcon: const Icon(Symbols.people),
-              child: Text(nowPlaying.splitedArtists[i]),
-            ),
+                ),
+                leadingIcon: const Icon(Symbols.people),
+                child: Text(artist.name),
+              );
+            },
           ),
           child: const Text("艺术家"),
         ),

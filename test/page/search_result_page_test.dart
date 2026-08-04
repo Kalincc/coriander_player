@@ -59,11 +59,27 @@ void main() {
     expect(result.lyrics.single.lines.single.text, 'a needle line');
   });
 
+  test('union search finds the canonical artist for both Chinese variants', () {
+    final artist = Artist(name: '张学友');
+    AudioLibrary.instance.artistCollection[artist.name] = artist;
+
+    expect(
+      UnionSearchResult.search('張學友').artists,
+      contains(same(artist)),
+    );
+    expect(
+      UnionSearchResult.search('张学友').artists,
+      contains(same(artist)),
+    );
+  });
+
   testWidgets(
     'shows five ordered tabs and refreshes the current query after index sync',
     (tester) async {
       final song = _audio(title: 'Needle Song');
       AudioLibrary.instance.audioCollection.add(song);
+      AudioLibrary.instance.artistCollection['Test Artist'] =
+          Artist(name: 'Test Artist');
       var fingerprint = 1;
       var lines = const [
         LyricSearchLine(startMs: 1000, text: 'needle before refresh'),

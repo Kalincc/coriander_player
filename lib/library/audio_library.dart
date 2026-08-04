@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:ui';
 import 'package:coriander_player/app_settings.dart';
+import 'package:coriander_player/library/artist_name_normalizer.dart';
 import 'package:coriander_player/src/rust/api/tag_reader.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/painting.dart';
@@ -12,12 +13,29 @@ class AudioLibrary {
 
   AudioLibrary._(this.folders);
 
+  AudioLibrary.forTesting(Iterable<Audio> audios)
+      : folders = [AudioFolder(audios.toList(), '', 0, 0)] {
+    _buildCollections();
+  }
+
   /// 所有音乐
   List<Audio> audioCollection = [];
 
   Map<String, Artist> artistCollection = {};
 
+  Map<String, String> artistAliases = {};
+
   Map<String, Album> albumCollection = {};
+
+  Artist? artistForName(String rawName) {
+    final canonicalName =
+        artistAliases[rawName] ?? normalizeArtistName(rawName);
+    return artistCollection[canonicalName];
+  }
+
+  List<Artist> artistsForAudio(Audio audio) => _canonicalArtistNames(audio)
+      .map((canonicalName) => artistCollection[canonicalName]!)
+      .toList(growable: false);
 
   /// must call [initFromIndex]
   static AudioLibrary get instance {
@@ -73,19 +91,29 @@ class AudioLibrary {
   }
 
   void _buildCollections() {
+    audioCollection.clear();
+    artistCollection.clear();
+    albumCollection.clear();
+    artistAliases.clear();
+
     for (var f in folders) {
       audioCollection.addAll(f.audios);
     }
 
     for (Audio audio in audioCollection) {
-      for (String artistName in audio.splitedArtists) {
+      for (String rawName in audio.splitedArtists) {
+        final canonicalName = normalizeArtistName(rawName);
+        artistAliases[rawName] = canonicalName;
+      }
+
+      for (final canonicalName in _canonicalArtistNames(audio)) {
         /// 如果artistCollection中有artistName指向的artist，putIfAbsent会返回该artist。
         /// 随后往这个artist里添加该audio。
         ///
         /// 如果没有，创建一个名字为artistName的空艺术家，并将artistName与之相连。
         /// 随后往这个artist里添加该audio。
         artistCollection
-            .putIfAbsent(artistName, () => Artist(name: artistName))
+            .putIfAbsent(canonicalName, () => Artist(name: canonicalName))
             .works
             .add(audio);
       }
@@ -114,19 +142,33 @@ class AudioLibrary {
     /// 将专辑和艺术家链接起来
     for (Album album in albumCollection.values) {
       for (Audio audio in album.works) {
-        for (String artistName in audio.splitedArtists) {
+        for (final canonicalName in _canonicalArtistNames(audio)) {
           album.artistsMap.putIfAbsent(
-            artistName,
-            () => artistCollection[artistName]!,
+            canonicalName,
+            () => artistCollection[canonicalName]!,
           );
         }
       }
     }
   }
 
+  void rebuildCollections() {
+    _buildCollections();
+  }
+
   @override
   String toString() {
     return folders.toString();
+  }
+}
+
+Iterable<String> _canonicalArtistNames(Audio audio) sync* {
+  final seen = <String>{};
+  for (final rawName in audio.splitedArtists) {
+    final canonicalName = normalizeArtistName(rawName);
+    if (seen.add(canonicalName)) {
+      yield canonicalName;
+    }
   }
 }
 

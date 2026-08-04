@@ -1,10 +1,11 @@
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/artist_name_normalizer.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 List<String> filterArtistNames(Iterable<String> names, String query) {
-  final normalized = query.trim().toLowerCase();
+  final normalized = normalizeArtistName(query.trim()).toLowerCase();
   final result = names
       .where((name) => name.toLowerCase().contains(normalized))
       .toList(growable: false);
@@ -17,7 +18,8 @@ List<Album> albumsForArtist({
   required Map<String, Artist> artists,
   required String? artistName,
 }) {
-  final artist = artistName == null ? null : artists[artistName];
+  final artist =
+      artistName == null ? null : artists[normalizeArtistName(artistName)];
   return artist == null
       ? List<Album>.from(allAlbums)
       : List<Album>.from(artist.albumsMap.values);
