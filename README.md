@@ -16,6 +16,17 @@ scoop bucket add jin https://github.com/jinzhongjia/scoop-bucket
 scoop install jin/coriander_player
 ```
 
+## 本分支开发改动
+
+本分支 `agent/merge-traditional-simplified-artists` 基于之前的开发分支继续开发，新增艺术家名称繁简合并功能：
+
+- 繁体和简体艺术家名称会归并到同一个艺术家条目，界面统一显示简体名称。
+- 保留音频文件中的原始艺术家标签，不修改本地音乐元数据。
+- 艺术家列表、专辑筛选、歌曲详情、正在播放菜单、歌曲菜单和艺术家搜索统一支持该规则。
+- 同一首歌同时包含繁体和简体艺术家标签时，只显示和关联一次。
+
+该功能目前仍在开发分支中，尚未包含在正式 Release 安装包内；需要从该分支重新构建安装包后才能使用。
+
 ## 其他平台支持
 - MacOS: [https://github.com/marscey/coriander_player/tree/macos-platform](https://github.com/marscey/coriander_player/tree/macos-platform)
 - Linux: [https://github.com/Sh12uku/coriander_player_linux]()
