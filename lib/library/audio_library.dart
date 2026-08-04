@@ -33,6 +33,10 @@ class AudioLibrary {
     return artistCollection[canonicalName];
   }
 
+  List<Artist> artistsForAudio(Audio audio) => _canonicalArtistNames(audio)
+      .map((canonicalName) => artistCollection[canonicalName]!)
+      .toList(growable: false);
+
   /// must call [initFromIndex]
   static AudioLibrary get instance {
     _instance ??= AudioLibrary._([]);
@@ -100,7 +104,9 @@ class AudioLibrary {
       for (String rawName in audio.splitedArtists) {
         final canonicalName = normalizeArtistName(rawName);
         artistAliases[rawName] = canonicalName;
+      }
 
+      for (final canonicalName in _canonicalArtistNames(audio)) {
         /// 如果artistCollection中有artistName指向的artist，putIfAbsent会返回该artist。
         /// 随后往这个artist里添加该audio。
         ///
@@ -136,8 +142,7 @@ class AudioLibrary {
     /// 将专辑和艺术家链接起来
     for (Album album in albumCollection.values) {
       for (Audio audio in album.works) {
-        for (String rawName in audio.splitedArtists) {
-          final canonicalName = normalizeArtistName(rawName);
+        for (final canonicalName in _canonicalArtistNames(audio)) {
           album.artistsMap.putIfAbsent(
             canonicalName,
             () => artistCollection[canonicalName]!,
@@ -154,6 +159,16 @@ class AudioLibrary {
   @override
   String toString() {
     return folders.toString();
+  }
+}
+
+Iterable<String> _canonicalArtistNames(Audio audio) sync* {
+  final seen = <String>{};
+  for (final rawName in audio.splitedArtists) {
+    final canonicalName = normalizeArtistName(rawName);
+    if (seen.add(canonicalName)) {
+      yield canonicalName;
+    }
   }
 }
 

@@ -11,4 +11,8 @@ void main() {
     expect(normalizeArtistName('YOASOBI (Live)'), 'YOASOBI (Live)');
     expect(normalizeArtistName('A1-测试'), 'A1-测试');
   });
+
+  test('passes through unmapped characters unchanged', () {
+    expect(normalizeArtistName('🎵'), '🎵');
+  });
 }
