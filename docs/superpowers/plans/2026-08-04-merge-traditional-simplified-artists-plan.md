@@ -265,10 +265,10 @@ Run:
 
 ```powershell
 dart format --output=none --set-exit-if-changed lib/library/artist_name_normalizer.dart lib/library/audio_library.dart lib/component/audio_tile.dart lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart test/library/artist_name_normalizer_test.dart test/library/audio_library_artist_merge_test.dart test/page/album_artist_filter_test.dart test/page/search_result_page_test.dart
-flutter analyze
+flutter analyze --no-fatal-infos lib/library/artist_name_normalizer.dart lib/library/audio_library.dart lib/component/audio_tile.dart lib/page/audio_detail_page.dart lib/page/now_playing_page/page.dart lib/page/album_artist_filter.dart lib/page/search_page/search_page.dart
 ```
 
-Expected: formatting reports no changes and analysis exits with zero errors.
+Expected: formatting reports no changes and feature-boundary analysis exits with zero errors. A full-project `flutter analyze` is known to be blocked by unrelated baseline sources/configuration and is not part of this local, reduced validation gate.
 
 - [ ] **Step 2: Run the complete targeted test set**
 
@@ -280,9 +280,9 @@ flutter test --no-pub test/library/artist_name_normalizer_test.dart test/library
 
 Expected: all tests pass, including the pre-existing lyric and album-filter regressions.
 
-- [ ] **Step 3: Verify the Windows workflow**
+- [ ] **Step 3: Inspect the Windows workflow**
 
-Run the existing GitHub Actions Windows workflow for the implementation branch. Confirm that `flutter pub get` resolves the existing pure-Dart dependency set, `flutter build windows` completes, and the packaging step still finds the Windows release output. Keep unrelated release steps unchanged.
+Inspect the existing GitHub Actions Windows workflow. Confirm that it still runs `flutter pub get`, `flutter build windows`, BASS placement, and release-artifact upload. Dispatching the manual workflow requires a remote implementation branch; do not push or create a PR during this local execution unless separately authorized. Record remote CI as pending until that authorization exists.
 
 - [ ] **Step 4: Inspect the final diff and commit validation-only changes**
 
@@ -311,5 +311,5 @@ git commit -m "ci: adjust Windows workflow"
 - [ ] Artist list, artist details, album filter, song details, now-playing menu, and global artist search use the canonical object.
 - [ ] Traditional and Simplified artist queries both match.
 - [ ] Audio tags and persisted index data remain unchanged.
-- [ ] `flutter analyze` and the focused test set pass.
-- [ ] GitHub Actions Windows packaging passes with the pure-Dart dependency set.
+- [ ] Feature-boundary `flutter analyze --no-fatal-infos` and the focused test set pass; unrelated full-project analyzer failures are documented.
+- [ ] Windows workflow structure remains intact; remote packaging execution is pending an authorized branch push/PR.
