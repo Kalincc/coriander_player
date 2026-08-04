@@ -42,18 +42,20 @@ class AudioTile extends StatelessWidget {
         SubmenuButton(
           menuChildren: List.generate(
             audio.splitedArtists.length,
-            (i) => MenuItemButton(
-              onPressed: () {
-                final Artist artist = AudioLibrary
-                    .instance.artistCollection[audio.splitedArtists[i]]!;
-                context.push(
-                  app_paths.ARTIST_DETAIL_PAGE,
-                  extra: artist,
-                );
-              },
-              leadingIcon: const Icon(Symbols.artist),
-              child: Text(audio.splitedArtists[i]),
-            ),
+            (i) {
+              final artist =
+                  AudioLibrary.instance.artistForName(audio.splitedArtists[i])!;
+              return MenuItemButton(
+                onPressed: () {
+                  context.push(
+                    app_paths.ARTIST_DETAIL_PAGE,
+                    extra: artist,
+                  );
+                },
+                leadingIcon: const Icon(Symbols.artist),
+                child: Text(artist.name),
+              );
+            },
           ),
           child: const Text("艺术家"),
         ),

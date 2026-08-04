@@ -78,6 +78,8 @@ void main() {
     (tester) async {
       final song = _audio(title: 'Needle Song');
       AudioLibrary.instance.audioCollection.add(song);
+      AudioLibrary.instance.artistCollection['Test Artist'] =
+          Artist(name: 'Test Artist');
       var fingerprint = 1;
       var lines = const [
         LyricSearchLine(startMs: 1000, text: 'needle before refresh'),
