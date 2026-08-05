@@ -35,11 +35,25 @@ void main() {
 <tt><body><div><p begin="1.5" end="3.25">line timed text</p></div></body></tt>
 ''');
 
-    final line = lyric!.lines.single as TtmlLine;
+    final line = lyric!.lines.single as LrcLine;
     expect(line.start.inMilliseconds, 1500);
     expect(line.length.inMilliseconds, 1750);
     expect(line.content, 'line timed text');
-    expect(line.words, isEmpty);
+  });
+
+  test('parses Apple minute-second clock timestamps', () {
+    final lyric = Ttml.fromTtmlText('''
+<tt><body><div>
+  <p begin="57.085" end="1:03.351">
+    <span begin="57.085" end="58.000">先</span>
+    <span begin="58.000" end="1:03.351">後</span>
+  </p>
+</div></body></tt>
+''');
+
+    final line = lyric!.lines.single as TtmlLine;
+    expect(line.start.inMilliseconds, 57085);
+    expect(line.length.inMilliseconds, 6266);
   });
 
   test('parses decimal and clock timestamps with dur', () {
@@ -52,7 +66,7 @@ void main() {
 
     expect(
         lyric!.lines.map((line) => line.start.inMilliseconds), [3125, 62500]);
-    expect(lyric.lines.map((line) => (line as TtmlLine).length.inMilliseconds),
+    expect(lyric.lines.map((line) => (line as LrcLine).length.inMilliseconds),
         [875, 1250]);
   });
 
@@ -102,6 +116,6 @@ void main() {
 ''');
 
     expect(lyric!.lines, hasLength(1));
-    expect((lyric.lines.single as TtmlLine).content, 'valid');
+    expect((lyric.lines.single as LrcLine).content, 'valid');
   });
 }

@@ -12,7 +12,7 @@ class Ttml extends Lrc {
       );
       if (document.rootElement.localName != 'tt') return null;
 
-      final lines = <TtmlLine>[];
+      final lines = <LyricLine>[];
       final paragraphs = document.descendants
           .whereType<XmlElement>()
           .where((element) => element.localName == 'p');
@@ -31,7 +31,7 @@ class Ttml extends Lrc {
     }
   }
 
-  static TtmlLine? _parseParagraph(XmlElement paragraph) {
+  static LyricLine? _parseParagraph(XmlElement paragraph) {
     final start = _parseTimestamp(paragraph.getAttribute('begin'));
     final end = _resolveEnd(
       start,
@@ -47,6 +47,15 @@ class Ttml extends Lrc {
         .whereType<XmlElement>()
         .where((element) => element.localName == 'span')
         .toList();
+    if (spans.isEmpty) {
+      return LrcLine(
+        start,
+        content,
+        isBlank: false,
+        length: end - start,
+      );
+    }
+
     final words = <TtmlWord>[];
     for (var index = 0; index < spans.length; index++) {
       final span = spans[index];
@@ -96,19 +105,21 @@ class Ttml extends Lrc {
       return Duration(milliseconds: (decimal * 1000).round());
     }
 
-    final match =
-        RegExp(r'^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$').firstMatch(trimmed);
-    if (match == null) return null;
-    final hours = int.tryParse(match.group(1)!);
-    final minutes = int.tryParse(match.group(2)!);
-    final seconds = double.tryParse(match.group(3)!);
-    if (hours == null ||
-        minutes == null ||
-        seconds == null ||
-        minutes >= 60 ||
-        seconds >= 60) {
+    final parts = trimmed.split(':');
+    if (parts.length != 2 && parts.length != 3) return null;
+
+    final seconds = double.tryParse(parts.last);
+    if (seconds == null || seconds < 0 || seconds >= 60) {
       return null;
     }
+
+    final minutesIndex = parts.length == 2 ? 0 : 1;
+    final minutes = int.tryParse(parts[minutesIndex]);
+    final hours = parts.length == 2 ? 0 : int.tryParse(parts[0]);
+    if (hours == null || hours < 0 || minutes == null || minutes < 0) {
+      return null;
+    }
+
     return Duration(
       milliseconds: ((hours * 3600 + minutes * 60 + seconds) * 1000).round(),
     );
