@@ -5,9 +5,24 @@ import 'dart:io';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/library/lyric_search_models.dart';
+import 'package:coriander_player/lyric/ttml.dart';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
 import 'package:coriander_player/src/rust/frb_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+const wordTimedTtml = '''
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyric-ttml-internal"
+    itunes:timing="Word">
+  <body><div>
+    <p begin="19.311" end="22.288">
+      <span begin="19.311" end="19.720">first</span>
+      <span begin="19.720" end="20.491">second</span>
+      <span begin="20.491" end="21.126">third</span>
+    </p>
+  </div></body>
+</tt>
+''';
 
 Audio makeAudio(String path, int modified) => Audio(
       path,
@@ -26,6 +41,15 @@ Audio makeAudio(String path, int modified) => Audio(
 void main() {
   setUpAll(() {
     RustLib.initMock(api: _TestRustLibApi());
+  });
+
+  test('indexes TTML sync lines as searchable full lines', () {
+    final lyric = Ttml.fromTtmlText(wordTimedTtml)!;
+    final lines = lyricSearchLinesFromLyric(lyric);
+
+    expect(lines, [
+      const LyricSearchLine(startMs: 19311, text: 'firstsecondthird'),
+    ]);
   });
 
   test('local lyric fingerprint tracks sidecar changes and deletion', () async {

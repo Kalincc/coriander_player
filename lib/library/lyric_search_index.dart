@@ -35,15 +35,19 @@ Future<LyricFileFingerprint> readLocalLyricFingerprint(Audio audio) async {
 Future<List<LyricSearchLine>> readLocalLyricLines(Audio audio) async {
   final lyric = await Lrc.fromAudioPath(audio);
   if (lyric == null) return const [];
-  return lyric.lines
-      .whereType<UnsyncLyricLine>()
-      .where((line) => line.content.trim().isNotEmpty)
-      .map((line) => LyricSearchLine(
-            startMs: line.start.inMilliseconds,
-            text: line.content,
-          ))
-      .toList(growable: false);
+  return lyricSearchLinesFromLyric(lyric);
 }
+
+List<LyricSearchLine> lyricSearchLinesFromLyric(Lrc lyric) => lyric.lines
+    .where((line) => line is UnsyncLyricLine || line is SyncLyricLine)
+    .map((line) => LyricSearchLine(
+          startMs: line.start.inMilliseconds,
+          text: line is UnsyncLyricLine
+              ? line.content
+              : (line as SyncLyricLine).content,
+        ))
+    .where((line) => line.text.trim().isNotEmpty)
+    .toList(growable: false);
 
 Future<void> writeLyricIndexAtomically(
   Directory directory,
