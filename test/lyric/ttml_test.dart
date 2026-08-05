@@ -32,7 +32,10 @@ void main() {
 
   test('parses line-timed paragraph without spans', () {
     final lyric = Ttml.fromTtmlText('''
-<tt><body><div><p begin="1.5" end="3.25">line timed text</p></div></body></tt>
+<tt xmlns:itunes="http://music.apple.com/lyric-ttml-internal"
+    itunes:timing="Line"><body><div>
+  <p begin="1.5" end="3.25">line timed text</p>
+</div></body></tt>
 ''');
 
     final line = lyric!.lines.single as LrcLine;
@@ -54,6 +57,25 @@ void main() {
     final line = lyric!.lines.single as TtmlLine;
     expect(line.start.inMilliseconds, 57085);
     expect(line.length.inMilliseconds, 6266);
+    expect(line.words.first.start.inMilliseconds, 57085);
+    expect(line.words.first.length.inMilliseconds, 915);
+    expect(line.words.last.start.inMilliseconds, 58000);
+    expect(line.words.last.length.inMilliseconds, 5351);
+  });
+
+  test('skips non-finite and invalid clock timestamps', () {
+    expect(
+      Ttml.fromTtmlText(
+        '<tt><body><div><p begin="0" end="00:00:NaN">bad</p></div></body></tt>',
+      ),
+      isNull,
+    );
+    expect(
+      Ttml.fromTtmlText(
+        '<tt><body><div><p begin="00:60:00" end="00:60:01">bad</p></div></body></tt>',
+      ),
+      isNull,
+    );
   });
 
   test('parses decimal and clock timestamps with dur', () {

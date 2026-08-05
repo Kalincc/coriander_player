@@ -101,7 +101,7 @@ class Ttml extends Lrc {
     if (trimmed.isEmpty) return null;
 
     final decimal = double.tryParse(trimmed);
-    if (decimal != null && decimal >= 0) {
+    if (decimal != null && decimal.isFinite && decimal >= 0) {
       return Duration(milliseconds: (decimal * 1000).round());
     }
 
@@ -109,14 +109,18 @@ class Ttml extends Lrc {
     if (parts.length != 2 && parts.length != 3) return null;
 
     final seconds = double.tryParse(parts.last);
-    if (seconds == null || seconds < 0 || seconds >= 60) {
+    if (seconds == null || !seconds.isFinite || seconds < 0 || seconds >= 60) {
       return null;
     }
 
     final minutesIndex = parts.length == 2 ? 0 : 1;
     final minutes = int.tryParse(parts[minutesIndex]);
     final hours = parts.length == 2 ? 0 : int.tryParse(parts[0]);
-    if (hours == null || hours < 0 || minutes == null || minutes < 0) {
+    if (hours == null ||
+        hours < 0 ||
+        minutes == null ||
+        minutes < 0 ||
+        (parts.length == 3 && minutes >= 60)) {
       return null;
     }
 
