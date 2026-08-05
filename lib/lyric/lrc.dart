@@ -2,7 +2,19 @@ import 'dart:math';
 
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/lyric/lyric.dart';
+import 'package:coriander_player/lyric/ttml.dart';
 import 'package:coriander_player/src/rust/api/tag_reader.dart';
+
+Lrc? parseLocalLyricText(String text, {String? separator = ' / '}) {
+  final normalized = text.replaceFirst('\uFEFF', '').trim();
+  if (normalized.isEmpty) return null;
+
+  if (normalized.startsWith('<')) {
+    final ttml = Ttml.fromTtmlText(normalized);
+    if (ttml != null) return ttml;
+  }
+  return Lrc.fromLrcText(normalized, LrcSource.local, separator: separator);
+}
 
 class LrcLine extends UnsyncLyricLine {
   bool isBlank;
@@ -188,7 +200,7 @@ class Lrc extends Lyric {
       if (value == null) {
         return null;
       }
-      return Lrc.fromLrcText(value, LrcSource.local, separator: separator);
+      return parseLocalLyricText(value, separator: separator);
     });
 
     return lyric;
