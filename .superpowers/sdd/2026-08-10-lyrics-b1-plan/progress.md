@@ -13,3 +13,4 @@ Task 5: fix round 1/5 (0 addressed, 2 open; menu lifecycle/circular dependency a
 Task 5: fix round 1/5 (2 addressed, 0 open; controller-owned menu state and unrelated color migration removed; commits 37c0e36..d3c5acc)
 Task 5: minor (deferred): serialize/coalesce rapid preference saves; add direct widget coverage for hidden translation/boundary/Sync desktop output.
 Task 5: complete (commits ed410fb..d3c5acc, review clean; 2 minors deferred)
+Task 6: complete (commits d3c5acc..b92fdc3; focused regression 81/81 and affected tests 33/33 passed; baseline-only analyzer info)
