@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/library/lyric_search_models.dart';
+import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/ttml.dart';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
 import 'package:coriander_player/src/rust/frb_generated.dart';
@@ -50,6 +51,72 @@ void main() {
     expect(lines, [
       const LyricSearchLine(startMs: 19311, text: 'firstsecondthird'),
     ]);
+  });
+
+  test('extracts LRC translations and sync lyric translations', () {
+    final lrc = Lrc.fromLrcText(
+      '[00:01.50]主句┃translation',
+      LrcSource.local,
+      separator: null,
+    )!;
+    final syncLine = TtmlLine(
+      const Duration(milliseconds: 2500),
+      const Duration(seconds: 1),
+      const [],
+      'timed main',
+    )..translation = 'timed translation';
+    final syncLyric = Ttml([syncLine]);
+
+    expect(lyricSearchLinesFromLyric(lrc), [
+      LyricSearchLine(
+        startMs: 1500,
+        text: '主句',
+        translation: 'translation',
+      ),
+    ]);
+    expect(lyricSearchLinesFromLyric(syncLyric), [
+      LyricSearchLine(
+        startMs: 2500,
+        text: 'timed main',
+        translation: 'timed translation',
+      ),
+    ]);
+  });
+
+  test('v1 indexes are rebuilt as v2 with persisted search forms', () async {
+    String? persisted = jsonEncode({
+      'version': 1,
+      'entries': {
+        'legacy.flac': LyricIndexEntry(
+          audioPath: 'legacy.flac',
+          fingerprint: const LyricFileFingerprint(audioModified: 1),
+          lines: const [LyricSearchLine(startMs: 0, text: 'legacy')],
+        ).toJson(),
+      },
+    });
+    final loadedPaths = <String>[];
+    final index = LyricSearchIndex(
+      readIndex: () async => persisted,
+      writeIndex: (contents) async => persisted = contents,
+      fingerprintFor: (audio) async =>
+          LyricFileFingerprint(audioModified: audio.modified),
+      lyricLinesFor: (audio) async {
+        loadedPaths.add(audio.path);
+        return [LyricSearchLine(startMs: 5, text: audio.path)];
+      },
+    );
+    final songs = [makeAudio('legacy.flac', 1), makeAudio('new.flac', 1)];
+
+    await index.load();
+    await index.sync(songs);
+
+    final envelope = jsonDecode(persisted!) as Map<String, dynamic>;
+    final entries = envelope['entries'] as Map<String, dynamic>;
+    final firstLine =
+        entries['legacy.flac']['lines'][0] as Map<String, dynamic>;
+    expect(loadedPaths, ['legacy.flac', 'new.flac']);
+    expect(envelope['version'], 2);
+    expect(firstLine['searchForms'], isNotEmpty);
   });
 
   test('local lyric fingerprint tracks sidecar changes and deletion', () async {
@@ -144,7 +211,7 @@ void main() {
     fingerprints['a.flac'] = const LyricFileFingerprint(audioModified: 2);
     await index.sync([makeAudio('a.flac', 2)]);
     expect(loads, ['a.flac']);
-    expect(jsonDecode(persisted!)['version'], 1);
+    expect(jsonDecode(persisted!)['version'], 2);
   });
 
   test('corrupt JSON resets to an empty usable index', () async {
@@ -204,7 +271,7 @@ void main() {
       readIndex: () async {
         reads++;
         return jsonEncode({
-          'version': 1,
+          'version': 2,
           'entries': {
             'song.flac': LyricIndexEntry(
               audioPath: 'song.flac',
@@ -282,7 +349,7 @@ void main() {
   test('load rejects an envelope with unexpected top-level keys', () async {
     final index = LyricSearchIndex(
       readIndex: () async => jsonEncode({
-        'version': 1,
+        'version': 2,
         'entries': {
           'song.flac': LyricIndexEntry(
             audioPath: 'song.flac',
@@ -305,7 +372,7 @@ void main() {
 
   test('deletion-only sync persists the exact versioned envelope', () async {
     String? persisted = jsonEncode({
-      'version': 1,
+      'version': 2,
       'entries': {
         'deleted.flac': LyricIndexEntry(
           audioPath: 'deleted.flac',
@@ -325,7 +392,7 @@ void main() {
     await index.sync(const []);
 
     expect(jsonDecode(persisted!), {
-      'version': 1,
+      'version': 2,
       'entries': <String, Object?>{},
     });
   });

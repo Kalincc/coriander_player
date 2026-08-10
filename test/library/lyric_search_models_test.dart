@@ -23,6 +23,45 @@ void main() {
     RustLib.initMock(api: _TestRustLibApi());
   });
 
+  test('line JSON round-trips translations and persisted search forms', () {
+    final line = LyricSearchLine(
+      startMs: 12000,
+      text: '我愛你',
+      translation: 'I love you',
+      searchForms: const [
+        '我愛你',
+        '我爱你',
+        'wo ai ni',
+        'woaini',
+        'i love you',
+      ],
+    );
+
+    expect(line.toJson(), {
+      'startMs': 12000,
+      'text': '我愛你',
+      'translation': 'I love you',
+      'searchForms': [
+        '我愛你',
+        '我爱你',
+        'wo ai ni',
+        'woaini',
+        'i love you',
+      ],
+    });
+    expect(LyricSearchLine.fromJson(line.toJson()), line);
+  });
+
+  test('legacy line JSON calculates search forms when fields are absent', () {
+    final line = LyricSearchLine.fromJson({
+      'startMs': 12000,
+      'text': '我愛你',
+    });
+
+    expect(line.translation, isNull);
+    expect(line.searchForms, ['我愛你', '我爱你', 'wo ai ni', 'woaini']);
+  });
+
   test('entry JSON round-trips without song metadata', () {
     final entry = LyricIndexEntry(
       audioPath: r'C:\music\song.flac',
@@ -62,6 +101,35 @@ void main() {
     expect(result, hasLength(1));
     expect(result.single.audio, same(song));
     expect(result.single.lines.map((line) => line.startMs), [10000, 30000]);
+  });
+
+  test('matches traditional lyrics, simplified text, pinyin, and translation',
+      () {
+    final song = audio('song.flac');
+    final originalLine = LyricSearchLine(
+      startMs: 1500,
+      text: '我愛你',
+      translation: 'I love you',
+    );
+    final entries = {
+      song.path: LyricIndexEntry(
+        audioPath: song.path,
+        fingerprint: const LyricFileFingerprint(audioModified: 100),
+        lines: [originalLine],
+      ),
+    };
+
+    for (final query in ['我愛你', '我爱你', 'wo ai ni', 'i love you']) {
+      final result = searchLyricEntries(
+        query: query,
+        entries: entries,
+        audios: [song],
+      );
+
+      expect(result, hasLength(1), reason: query);
+      expect(result.single.audio, same(song), reason: query);
+      expect(result.single.lines, [originalLine], reason: query);
+    }
   });
 
   test('empty query and blank lyric lines do not match', () {

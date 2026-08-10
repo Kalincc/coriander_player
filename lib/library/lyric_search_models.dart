@@ -1,31 +1,58 @@
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/lyric_search_normalizer.dart';
 import 'package:flutter/foundation.dart';
 
 @immutable
 class LyricSearchLine {
   final int startMs;
   final String text;
+  final String? translation;
+  final List<String>? _persistedSearchForms;
 
-  const LyricSearchLine({required this.startMs, required this.text});
+  const LyricSearchLine({
+    required this.startMs,
+    required this.text,
+    this.translation,
+    List<String>? searchForms,
+  }) : _persistedSearchForms = searchForms;
 
   String get normalizedText => text.toLowerCase();
 
-  Map<String, Object> toJson() => {'startMs': startMs, 'text': text};
+  List<String> get searchForms =>
+      _persistedSearchForms ??
+      {
+        ...lyricSearchFormsFor(text),
+        if (translation != null) ...lyricSearchFormsFor(translation!),
+      }.toList(growable: false);
+
+  Map<String, Object> toJson() => {
+        'startMs': startMs,
+        'text': text,
+        if (translation?.trim().isNotEmpty == true) 'translation': translation!,
+        'searchForms': searchForms,
+      };
 
   factory LyricSearchLine.fromJson(Map<String, dynamic> json) =>
       LyricSearchLine(
         startMs: json['startMs'] as int,
         text: json['text'] as String,
+        translation: json['translation'] as String?,
+        searchForms: json['searchForms'] == null
+            ? null
+            : List<String>.from(json['searchForms'] as List),
       );
 
   @override
   bool operator ==(Object other) =>
       other is LyricSearchLine &&
       startMs == other.startMs &&
-      text == other.text;
+      text == other.text &&
+      translation == other.translation &&
+      listEquals(searchForms, other.searchForms);
 
   @override
-  int get hashCode => Object.hash(startMs, text);
+  int get hashCode =>
+      Object.hash(startMs, text, translation, Object.hashAll(searchForms));
 }
 
 @immutable
@@ -125,8 +152,7 @@ List<LyricSearchMatch> searchLyricEntries({
   required Map<String, LyricIndexEntry> entries,
   required Iterable<Audio> audios,
 }) {
-  final normalizedQuery = query.trim().toLowerCase();
-  if (normalizedQuery.isEmpty) return [];
+  if (query.trim().isEmpty) return [];
 
   final matches = <LyricSearchMatch>[];
   for (final audio in audios) {
@@ -137,7 +163,7 @@ List<LyricSearchMatch> searchLyricEntries({
         .where(
           (line) =>
               line.text.trim().isNotEmpty &&
-              line.normalizedText.contains(normalizedQuery),
+              lyricSearchMatches(query, line.searchForms),
         )
         .toSet()
         .toList()

@@ -40,12 +40,30 @@ Future<List<LyricSearchLine>> readLocalLyricLines(Audio audio) async {
 
 List<LyricSearchLine> lyricSearchLinesFromLyric(Lrc lyric) => lyric.lines
     .where((line) => line is UnsyncLyricLine || line is SyncLyricLine)
-    .map((line) => LyricSearchLine(
+    .map((line) {
+      if (line is LrcLine) {
+        final parts = line.content.split('┃');
+        final translation = parts.skip(1).join('┃');
+        return LyricSearchLine(
           startMs: line.start.inMilliseconds,
-          text: line is UnsyncLyricLine
-              ? line.content
-              : (line as SyncLyricLine).content,
-        ))
+          text: parts.first,
+          translation: translation.trim().isEmpty ? null : translation,
+        );
+      }
+
+      if (line is SyncLyricLine) {
+        return LyricSearchLine(
+          startMs: line.start.inMilliseconds,
+          text: line.content,
+          translation: line.translation,
+        );
+      }
+
+      return LyricSearchLine(
+        startMs: line.start.inMilliseconds,
+        text: (line as UnsyncLyricLine).content,
+      );
+    })
     .where((line) => line.text.trim().isNotEmpty)
     .toList(growable: false);
 
@@ -97,7 +115,7 @@ class LyricIndexProgress {
 }
 
 class LyricSearchIndex extends ChangeNotifier {
-  static const int formatVersion = 1;
+  static const int formatVersion = 2;
   static final LyricSearchIndex instance = LyricSearchIndex.defaults();
 
   final ReadLyricIndex readIndex;
