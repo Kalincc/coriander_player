@@ -93,3 +93,7 @@ Result: exit 0, 7 tests passed.
 ## Concerns
 
 - None. Tests use direct controllers and pure presentation/message helpers; they do not initialize real audio devices or start the desktop lyric executable.
+
+## Commit
+
+- `08d2c25faf7630af6eb800028db0065d03141f28` — `feat: add lyric translation display toggle`
