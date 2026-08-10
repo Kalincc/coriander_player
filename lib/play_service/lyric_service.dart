@@ -89,13 +89,7 @@ class LyricService extends ChangeNotifier {
       if (_disposed || lyric == null || lyric.lines.isEmpty) return;
 
       final audioPosition = _durationFromSeconds(_delegate.position);
-      final lyricPosition = lyricClockPosition(audioPosition, lyricOffset);
-      final next = lyric.lines.indexWhere((line) => line.start > lyricPosition);
-      _nextLyricLine = next == -1 ? lyric.lines.length : next;
-      _emitLyricLine(
-        lyricLineIndexAt(lyric.lines, audioPosition, lyricOffset),
-        lyric,
-      );
+      _updateCurrentLyricAt(audioPosition, lyric, forceEmit: true);
     });
   }
 
@@ -103,20 +97,22 @@ class LyricService extends ChangeNotifier {
     currLyricFuture.then((lyric) {
       if (_disposed || lyric == null || lyric.lines.isEmpty) return;
 
-      final lyricPosition = lyricClockPosition(
-        _durationFromSeconds(position),
-        lyricOffset,
-      );
-      var nextLine = _nextLyricLine;
-      while (nextLine < lyric.lines.length &&
-          lyricPosition >= lyric.lines[nextLine].start) {
-        nextLine += 1;
-      }
-      if (nextLine == _nextLyricLine) return;
-
-      _nextLyricLine = nextLine;
-      _emitLyricLine(max(_nextLyricLine - 1, 0), lyric);
+      _updateCurrentLyricAt(_durationFromSeconds(position), lyric);
     });
+  }
+
+  void _updateCurrentLyricAt(
+    Duration audioPosition,
+    Lyric lyric, {
+    bool forceEmit = false,
+  }) {
+    final lyricPosition = lyricClockPosition(audioPosition, lyricOffset);
+    final next = lyric.lines.indexWhere((line) => line.start > lyricPosition);
+    _nextLyricLine = next == -1 ? lyric.lines.length : next;
+
+    final currentLine = max(_nextLyricLine - 1, 0);
+    if (!forceEmit && currentLine == _currentLyricLine) return;
+    _emitLyricLine(currentLine, lyric);
   }
 
   void _handlePreferenceChanged() {

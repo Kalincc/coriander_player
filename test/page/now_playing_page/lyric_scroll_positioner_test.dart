@@ -112,6 +112,51 @@ void main() {
     }
   });
 
+  test('position rollback re-emits the earlier offset-aware lyric line',
+      () async {
+    final originalPreference = AppPreference.instance.nowPlayingPagePref;
+    final preference = NowPlayingPagePreference(
+      NowPlayingViewMode.withLyric,
+      LyricTextAlign.left,
+      22,
+      18,
+      lyricOffsetMs: 1000,
+    );
+    AppPreference.instance.nowPlayingPagePref = preference;
+
+    final delegate = _FakeLyricServiceDelegate(position: 0);
+    final service = LyricService.withDelegate(delegate);
+    final emittedLines = <int>[];
+    final subscription = service.lyricLineStream.listen(emittedLines.add);
+
+    try {
+      service.useSpecificLyric(
+        Lrc(
+          [
+            LrcLine(Duration.zero, 'zero', isBlank: false),
+            LrcLine(const Duration(seconds: 5), 'five', isBlank: false),
+            LrcLine(const Duration(seconds: 10), 'ten', isBlank: false),
+          ],
+          LrcSource.local,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      emittedLines.clear();
+
+      delegate.emitPosition(11);
+      await Future<void>.delayed(Duration.zero);
+      delegate.emitPosition(6);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(emittedLines, [2, 1]);
+    } finally {
+      service.dispose();
+      await subscription.cancel();
+      await delegate.close();
+      AppPreference.instance.nowPlayingPagePref = originalPreference;
+    }
+  });
+
   testWidgets('vertical lyric tiles obey the translation preference',
       (tester) async {
     final originalPreference = AppPreference.instance.nowPlayingPagePref;
@@ -199,6 +244,8 @@ class _FakeLyricServiceDelegate implements LyricServiceDelegate {
 
   @override
   void sendDesktopLyricLine(LyricLine line) {}
+
+  void emitPosition(double position) => _positionController.add(position);
 
   Future<void> close() => _positionController.close();
 }

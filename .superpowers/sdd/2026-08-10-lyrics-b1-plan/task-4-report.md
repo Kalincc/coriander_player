@@ -90,3 +90,16 @@ The first run after implementation exposed a test-fixture error: `LyricViewTile`
 
 - The affected-file analyzer reports seven baseline info-level diagnostics. They are unrelated to Task 4 and were not mechanically rewritten to avoid expanding the patch.
 - Tests intentionally use pure timing calculations, a small `LyricServiceDelegate` fake, and a non-main lyric tile. They do not start real audio devices, tickers tied to the singleton playback service, or desktop lyric processes.
+
+## Review fix — playback-position rollback
+
+- Finding: `_handlePositionChanged` started from the previous `_nextLyricLine` and only scanned forward, so a lower playback timestamp could not select an earlier lyric line.
+- RED test: `position rollback re-emits the earlier offset-aware lyric line` uses only `_FakeLyricServiceDelegate`, a +1000 ms offset, and position events 11 s → 6 s. Before the fix, the targeted command exited 1 with actual emissions `[2]` instead of expected `[2, 1]`.
+- Fix: position events and explicit refreshes now share `_updateCurrentLyricAt`, which absolutely recalculates `_nextLyricLine` from `lyricClockPosition(audioPosition, lyricOffset)` and the original line starts. Explicit refreshes force a re-emission; position events emit only when the absolute current line changes.
+- GREEN command: `flutter test test/page/now_playing_page/lyric_scroll_positioner_test.dart --plain-name "position rollback re-emits the earlier offset-aware lyric line"` — exit 0, 1 test passed.
+- Task command: `flutter test test/lyric/lyric_timing_test.dart test/page/now_playing_page/lyric_scroll_positioner_test.dart` — exit 0, 12 tests passed.
+- Analysis: `flutter analyze lib/play_service/lyric_service.dart test/page/now_playing_page/lyric_scroll_positioner_test.dart` — exit 0, no issues found.
+- Formatting: `dart format` / `dart format --output=none --set-exit-if-changed` for the two changed Dart files — exit 0.
+- Diff check: `git diff --check` — exit 0.
+- New commit: `fix: handle lyric position rollback` (the commit containing this report section).
+- Additional concerns: none. The regression test does not initialize real audio or desktop lyric processes.
