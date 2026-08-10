@@ -131,4 +131,4 @@ Result: exit 0, 7 tests passed.
 
 ### Fix commit
 
-- `fix: make lyric menu visibility controller-owned` (hash appended after commit creation).
+- `f46016ec216ee5f8283e56b329dd4695e576e302` — `fix: make lyric menu visibility controller-owned`
