@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
+import 'package:coriander_player/lyric/lyric_timing.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_scroll_positioner.dart';
@@ -157,18 +157,25 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
 
   /// 加载当前歌词页面，获取并滚动到当前歌词行的位置
   void _initLyricView() {
-    final next = widget.lyric.lines.indexWhere(
-      (element) =>
-          element.start.inMilliseconds / 1000 > playbackService.position,
+    final currentLine = lyricLineIndexAt(
+      widget.lyric.lines,
+      Duration(
+        microseconds:
+            (playbackService.position * Duration.microsecondsPerSecond).round(),
+      ),
+      lyricService.lyricOffset,
     );
-    int nextLyricLine = next == -1 ? widget.lyric.lines.length : next;
-    lyricTiles = _generateLyricTiles(max(nextLyricLine - 1, 0));
+    lyricTiles = _generateLyricTiles(currentLine);
 
     _scheduleCurrentLyricCenter();
   }
 
   void _seekToLyricLine(int i) {
-    playbackService.seek(widget.lyric.lines[i].start.inMilliseconds / 1000);
+    final target = lyricDisplayStart(
+      widget.lyric.lines[i].start,
+      lyricService.lyricOffset,
+    );
+    playbackService.seek(target.inMilliseconds / 1000);
     setState(() {
       lyricTiles = _generateLyricTiles(i);
     });

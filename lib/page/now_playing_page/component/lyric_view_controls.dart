@@ -22,6 +22,7 @@ class LyricViewController extends ChangeNotifier {
   late LyricTextAlign lyricTextAlign = nowPlayingPagePref.lyricTextAlign;
   late double lyricFontSize = nowPlayingPagePref.lyricFontSize;
   late double translationFontSize = nowPlayingPagePref.translationFontSize;
+  bool get showTranslation => nowPlayingPagePref.showTranslation;
 
   /// 在左对齐、居中、右对齐之间循环切换
   void switchLyricTextAlign() {

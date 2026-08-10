@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
+import 'package:coriander_player/lyric/lyric_presentation.dart';
+import 'package:coriander_player/lyric/lyric_timing.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:flutter/material.dart';
@@ -68,6 +70,10 @@ class _SyncLineContent extends StatelessWidget {
     final lyricFontSize = lyricViewController.lyricFontSize;
     final translationFontSize = lyricViewController.translationFontSize;
     final alignment = lyricViewController.lyricTextAlign;
+    final presentation = presentLyricLine(
+      syncLine,
+      showTranslation: lyricViewController.showTranslation,
+    );
 
     if (!isMainLine) {
       if (syncLine.words.isEmpty) {
@@ -75,11 +81,16 @@ class _SyncLineContent extends StatelessWidget {
       }
 
       final List<Text> contents = [
-        buildPrimaryText(syncLine.content, scheme, alignment, lyricFontSize),
+        buildPrimaryText(
+          presentation.primary,
+          scheme,
+          alignment,
+          lyricFontSize,
+        ),
       ];
-      if (syncLine.translation != null) {
+      if (presentation.translation != null) {
         contents.add(buildSecondaryText(
-          syncLine.translation!,
+          presentation.translation!,
           scheme,
           alignment,
           translationFontSize,
@@ -103,7 +114,10 @@ class _SyncLineContent extends StatelessWidget {
       StreamBuilder(
         stream: PlayService.instance.playbackService.positionStream,
         builder: (context, snapshot) {
-          final posInMs = (snapshot.data ?? 0) * 1000;
+          final audioPosition = Duration(
+            microseconds:
+                ((snapshot.data ?? 0) * Duration.microsecondsPerSecond).round(),
+          );
           return RichText(
             textAlign: switch (alignment) {
               LyricTextAlign.left => TextAlign.left,
@@ -114,13 +128,11 @@ class _SyncLineContent extends StatelessWidget {
               children: List.generate(
                 syncLine.words.length,
                 (i) {
-                  final posFromWordStart = max(
-                    posInMs - syncLine.words[i].start.inMilliseconds,
-                    0,
-                  );
-                  final progress = min(
-                    posFromWordStart / syncLine.words[i].length.inMilliseconds,
-                    1.0,
+                  final progress = lyricWordProgress(
+                    audioPosition: audioPosition,
+                    wordStart: syncLine.words[i].start,
+                    wordLength: syncLine.words[i].length,
+                    offset: PlayService.instance.lyricService.lyricOffset,
                   );
                   return WidgetSpan(
                     child: ShaderMask(
@@ -153,9 +165,9 @@ class _SyncLineContent extends StatelessWidget {
         },
       )
     ];
-    if (syncLine.translation != null) {
+    if (presentation.translation != null) {
       contents.add(buildSecondaryText(
-        syncLine.translation!,
+        presentation.translation!,
         scheme,
         alignment,
         translationFontSize,
@@ -235,14 +247,21 @@ class _LrcLineContent extends StatelessWidget {
     final lyricFontSize = lyricViewController.lyricFontSize;
     final translationFontSize = lyricViewController.translationFontSize;
     final alignment = lyricViewController.lyricTextAlign;
-
-    final splited = lrcLine.content.split("┃");
+    final presentation = presentLyricLine(
+      lrcLine,
+      showTranslation: lyricViewController.showTranslation,
+    );
     final List<Text> contents = [
-      buildPrimaryText(splited.first, scheme, alignment, lyricFontSize),
+      buildPrimaryText(
+        presentation.primary,
+        scheme,
+        alignment,
+        lyricFontSize,
+      ),
     ];
-    for (var i = 1; i < splited.length; i++) {
+    if (presentation.translation != null) {
       contents.add(buildSecondaryText(
-        splited[i],
+        presentation.translation!,
         scheme,
         alignment,
         translationFontSize,
@@ -409,8 +428,14 @@ class LyricTransitionTileController extends ChangeNotifier {
       startInMs = syncLine!.start.inMilliseconds;
       lengthInMs = syncLine!.length.inMilliseconds;
     }
-    final sinceStart = position * 1000 - startInMs;
-    progress = max(sinceStart, 0) / lengthInMs;
+    progress = lyricWordProgress(
+      audioPosition: Duration(
+        microseconds: (position * Duration.microsecondsPerSecond).round(),
+      ),
+      wordStart: Duration(milliseconds: startInMs),
+      wordLength: Duration(milliseconds: lengthInMs),
+      offset: PlayService.instance.lyricService.lyricOffset,
+    );
     notifyListeners();
 
     if (progress >= 1) {

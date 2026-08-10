@@ -1,9 +1,37 @@
 import 'dart:async';
 
+import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
+import 'package:coriander_player/lyric/lyric_presentation.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:flutter/material.dart';
+
+String horizontalLyricText(
+  LyricLine line, {
+  required bool showTranslation,
+}) {
+  final presentation = presentLyricLine(
+    line,
+    showTranslation: showTranslation,
+  );
+  final translation = presentation.translation;
+  return translation == null
+      ? presentation.primary
+      : '${presentation.primary}┃$translation';
+}
+
+Duration horizontalLyricScrollDuration(
+  LyricLine line, {
+  required Duration waitFor,
+}) {
+  final length = switch (line) {
+    LrcLine() => line.length,
+    SyncLyricLine() => line.length,
+    _ => Duration.zero,
+  };
+  return length - waitFor - waitFor;
+}
 
 class HorizontalLyricView extends StatelessWidget {
   const HorizontalLyricView({
@@ -61,45 +89,40 @@ class _LyricHorizontalScrollAreaState
   final waitFor = const Duration(milliseconds: 300);
   final scrollController = ScrollController();
   final lyricService = PlayService.instance.lyricService;
+  final nowPlayingPagePreference = AppPreference.instance.nowPlayingPagePref;
   late StreamSubscription lyricLineStreamSubscription;
 
   var currContent = "Enjoy Music";
+  var currentLine = 0;
 
   @override
   void initState() {
     super.initState();
     if (widget.lyric.lines.isNotEmpty) {
-      final first = widget.lyric.lines.first;
-      if (first is LrcLine) {
-        currContent = first.content;
-      } else if (first is SyncLyricLine) {
-        currContent = first.translation == null
-            ? first.content
-            : "${first.content}┃${first.translation}";
-      }
+      currContent = horizontalLyricText(
+        widget.lyric.lines.first,
+        showTranslation: nowPlayingPagePreference.showTranslation,
+      );
     }
+    nowPlayingPagePreference.addListener(_refreshTranslation);
 
     lyricLineStreamSubscription = lyricService.lyricLineStream.listen((line) {
-      if (widget.lyric.lines.isEmpty) return;
+      if (line < 0 || line >= widget.lyric.lines.length) return;
       final currLine = widget.lyric.lines[line];
 
       setState(() {
-        if (currLine is LrcLine) {
-          currContent = currLine.content;
-        } else if (currLine is SyncLyricLine) {
-          currContent = currLine.translation == null
-              ? currLine.content
-              : "${currLine.content}┃${currLine.translation}";
-        }
+        currentLine = line;
+        currContent = horizontalLyricText(
+          currLine,
+          showTranslation: nowPlayingPagePreference.showTranslation,
+        );
       });
 
       /// 减去启动延时和滚动结束停留时间
-      late final Duration lastTime;
-      if (currLine is LrcLine) {
-        lastTime = currLine.length - waitFor - waitFor;
-      } else if (currLine is SyncLyricLine) {
-        lastTime = currLine.length - waitFor - waitFor;
-      }
+      final lastTime = horizontalLyricScrollDuration(
+        currLine,
+        waitFor: waitFor,
+      );
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!scrollController.hasClients) return;
@@ -119,6 +142,16 @@ class _LyricHorizontalScrollAreaState
           });
         }
       });
+    });
+  }
+
+  void _refreshTranslation() {
+    if (!mounted || widget.lyric.lines.isEmpty) return;
+    setState(() {
+      currContent = horizontalLyricText(
+        widget.lyric.lines[currentLine],
+        showTranslation: nowPlayingPagePreference.showTranslation,
+      );
     });
   }
 
@@ -144,8 +177,9 @@ class _LyricHorizontalScrollAreaState
 
   @override
   void dispose() {
-    super.dispose();
+    nowPlayingPagePreference.removeListener(_refreshTranslation);
     lyricLineStreamSubscription.cancel();
     scrollController.dispose();
+    super.dispose();
   }
 }

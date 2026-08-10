@@ -1,3 +1,7 @@
+import 'dart:math';
+
+import 'package:coriander_player/lyric/lyric.dart';
+
 const int lyricOffsetLimitMs = 10000;
 const int lyricOffsetStepMs = 100;
 
@@ -12,6 +16,18 @@ Duration lyricClockPosition(Duration audioPosition, Duration offset) {
 Duration lyricDisplayStart(Duration originalStart, Duration offset) {
   final displayStart = originalStart + offset;
   return displayStart.isNegative ? Duration.zero : displayStart;
+}
+
+int lyricLineIndexAt(
+  List<LyricLine> lines,
+  Duration audioPosition,
+  Duration offset,
+) {
+  if (lines.isEmpty) return 0;
+
+  final lyricPosition = lyricClockPosition(audioPosition, offset);
+  final nextLine = lines.indexWhere((line) => line.start > lyricPosition);
+  return nextLine == -1 ? lines.length - 1 : max(nextLine - 1, 0);
 }
 
 double lyricWordProgress({
