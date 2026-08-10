@@ -67,14 +67,14 @@ void main() {
     )..translation = 'timed translation';
     final syncLyric = Ttml([syncLine]);
 
-    expect(lyricSearchLinesFromLyric(lrc), [
+    expect(lyricSearchLinesFromLyric(lrc), const [
       LyricSearchLine(
         startMs: 1500,
         text: '主句',
         translation: 'translation',
       ),
     ]);
-    expect(lyricSearchLinesFromLyric(syncLyric), [
+    expect(lyricSearchLinesFromLyric(syncLyric), const [
       LyricSearchLine(
         startMs: 2500,
         text: 'timed main',

@@ -24,11 +24,11 @@ void main() {
   });
 
   test('line JSON round-trips translations and persisted search forms', () {
-    final line = LyricSearchLine(
+    const line = LyricSearchLine(
       startMs: 12000,
       text: '我愛你',
       translation: 'I love you',
-      searchForms: const [
+      searchForms: [
         '我愛你',
         '我爱你',
         'wo ai ni',
@@ -53,7 +53,7 @@ void main() {
   });
 
   test('legacy line JSON calculates search forms when fields are absent', () {
-    final line = LyricSearchLine.fromJson({
+    final line = LyricSearchLine.fromJson(const {
       'startMs': 12000,
       'text': '我愛你',
     });
@@ -106,7 +106,7 @@ void main() {
   test('matches traditional lyrics, simplified text, pinyin, and translation',
       () {
     final song = audio('song.flac');
-    final originalLine = LyricSearchLine(
+    const originalLine = LyricSearchLine(
       startMs: 1500,
       text: '我愛你',
       translation: 'I love you',
@@ -115,7 +115,7 @@ void main() {
       song.path: LyricIndexEntry(
         audioPath: song.path,
         fingerprint: const LyricFileFingerprint(audioModified: 100),
-        lines: [originalLine],
+        lines: const [originalLine],
       ),
     };
 

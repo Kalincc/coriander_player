@@ -59,6 +59,37 @@ void main() {
     expect(result.lyrics.single.lines.single.text, 'a needle line');
   });
 
+  testWidgets('submitting a query with Enter only refreshes local results',
+      (tester) async {
+    final song = _audio(title: 'Needle Song');
+    AudioLibrary.instance.audioCollection.add(song);
+    AudioLibrary.instance.artistCollection['Test Artist'] =
+        Artist(name: 'Test Artist');
+    final index = _index(
+      fingerprint: 1,
+      lines: const [LyricSearchLine(startMs: 1000, text: 'a needle line')],
+    );
+    await index.sync([song]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SearchResultPage(
+            initialQuery: 'missing',
+            lyricIndex: index,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), 'needle');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(find.text('a needle line', findRichText: true), findsOneWidget);
+  });
+
   test('union search finds the canonical artist for both Chinese variants', () {
     final artist = Artist(name: '张学友');
     AudioLibrary.instance.artistCollection[artist.name] = artist;
