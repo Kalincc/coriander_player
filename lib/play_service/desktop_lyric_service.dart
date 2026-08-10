@@ -66,9 +66,9 @@ class DesktopLyricService extends ChangeNotifier {
         nowPlaying?.artist ?? "无",
         nowPlaying?.album ?? "无",
         isDarkMode,
-        currScheme.primary.toARGB32(),
-        currScheme.surfaceContainer.toARGB32(),
-        currScheme.onSurface.toARGB32(),
+        currScheme.primary.value,
+        currScheme.surfaceContainer.value,
+        currScheme.onSurface.value,
       ).toJson())
     ]);
 
@@ -157,9 +157,9 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendThemeMessage(ColorScheme scheme) {
     sendMessage(msg.ThemeChangedMessage(
-      scheme.primary.toARGB32(),
-      scheme.surfaceContainer.toARGB32(),
-      scheme.onSurface.toARGB32(),
+      scheme.primary.value,
+      scheme.surfaceContainer.value,
+      scheme.onSurface.value,
     ));
   }
 

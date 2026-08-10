@@ -1,7 +1,6 @@
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/lyric/lyric_timing.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_controls.dart';
-import 'package:coriander_player/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:coriander_player/page/now_playing_page/page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -103,17 +102,40 @@ void main() {
     expect(saveCount, 1);
   });
 
+  test('keeps controls visible until every open menu closes', () {
+    final controller = LyricViewController(
+      preference: _preference(),
+      savePreference: () async {},
+    );
+    var notificationCount = 0;
+    controller.addListener(() => notificationCount++);
+
+    controller.openControlsMenu();
+    controller.openControlsMenu();
+
+    expect(controller.keepControlsVisible, isTrue);
+    expect(notificationCount, 1);
+
+    controller.closeControlsMenu();
+    expect(controller.keepControlsVisible, isTrue);
+    expect(notificationCount, 1);
+
+    controller.closeControlsMenu();
+    expect(controller.keepControlsVisible, isFalse);
+    expect(notificationCount, 2);
+
+    controller.closeControlsMenu();
+    expect(controller.keepControlsVisible, isFalse);
+    expect(notificationCount, 2);
+  });
+
   testWidgets('keeps lyric controls mounted while the offset menu is open',
       (tester) async {
     final controller = LyricViewController(
       preference: _preference(),
       savePreference: () async {},
     );
-    ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = false;
-    addTearDown(() {
-      ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = false;
-      controller.dispose();
-    });
+    addTearDown(controller.dispose);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -135,11 +157,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('减小 100 毫秒'), findsOneWidget);
-    expect(ALWAYS_SHOW_LYRIC_VIEW_CONTROLS, isTrue);
+    expect(controller.keepControlsVisible, isTrue);
 
     await tester.tap(find.text('减小 100 毫秒'));
     await tester.pumpAndSettle();
 
-    expect(ALWAYS_SHOW_LYRIC_VIEW_CONTROLS, isFalse);
+    expect(controller.keepControlsVisible, isFalse);
   });
 }

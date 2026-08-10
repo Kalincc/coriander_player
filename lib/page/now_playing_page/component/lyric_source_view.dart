@@ -8,7 +8,6 @@ import 'package:coriander_player/lyric/lyric_presentation.dart';
 import 'package:coriander_player/lyric/lyric_source.dart';
 import 'package:coriander_player/lyric/lyric_timing.dart';
 import 'package:coriander_player/music_matcher.dart';
-import 'package:coriander_player/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -40,7 +39,14 @@ String lyricSourcePreviewText(
 }
 
 class SetLyricSourceBtn extends StatelessWidget {
-  const SetLyricSourceBtn({super.key});
+  const SetLyricSourceBtn({
+    required this.onMenuOpen,
+    required this.onMenuClose,
+    super.key,
+  });
+
+  final VoidCallback onMenuOpen;
+  final VoidCallback onMenuClose;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +73,11 @@ class SetLyricSourceBtn extends StatelessWidget {
             ConnectionState.none => loadingWidget,
             ConnectionState.waiting => loadingWidget,
             ConnectionState.active => loadingWidget,
-            ConnectionState.done => _SetLyricSourceBtn(isLocal: isLocal),
+            ConnectionState.done => _SetLyricSourceBtn(
+                isLocal: isLocal,
+                onMenuOpen: onMenuOpen,
+                onMenuClose: onMenuClose,
+              ),
           };
         },
       ),
@@ -77,19 +87,22 @@ class SetLyricSourceBtn extends StatelessWidget {
 
 class _SetLyricSourceBtn extends StatelessWidget {
   final bool? isLocal;
-  const _SetLyricSourceBtn({this.isLocal});
+  final VoidCallback onMenuOpen;
+  final VoidCallback onMenuClose;
+
+  const _SetLyricSourceBtn({
+    required this.onMenuOpen,
+    required this.onMenuClose,
+    this.isLocal,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final lyricService = PlayService.instance.lyricService;
     return MenuAnchor(
-      onOpen: () {
-        ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = true;
-      },
-      onClose: () {
-        ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = false;
-      },
+      onOpen: onMenuOpen,
+      onClose: onMenuClose,
       menuChildren: [
         MenuItemButton(
           onPressed: () {

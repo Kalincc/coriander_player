@@ -97,3 +97,38 @@ Result: exit 0, 7 tests passed.
 ## Commit
 
 - `08d2c25faf7630af6eb800028db0065d03141f28` — `feat: add lyric translation display toggle`
+
+## Review fix — controller-owned menu visibility
+
+### Findings addressed
+
+- Replaced the cross-file `ALWAYS_SHOW_LYRIC_VIEW_CONTROLS` bool. It could not notify the vertical host, and interleaved source/offset menu callbacks could clear each other's keep-alive state.
+- Removed the source/controls reverse imports of `vertical_lyric_view.dart`. Source-menu lifecycle now enters the controller through explicit callbacks, so `vertical → controls → source` remains one-way.
+- Restored the six pre-existing `Color.value` calls in `desktop_lyric_service.dart`; the unrelated `toARGB32()` cleanup is no longer part of Task 5.
+
+### RED
+
+- Added `keeps controls visible until every open menu closes`, covering `open A → open B → close A → close B` plus an extra close and transition-only notifications.
+- Updated the isolated offset-menu widget test to assert controller-owned visibility rather than a global variable.
+- Command: `flutter test test/component/lyric_view_controls_test.dart --plain-name "keeps controls visible until every open menu closes"`
+- Result: exit 1 as expected; compilation failed because `openControlsMenu`, `closeControlsMenu`, and `keepControlsVisible` did not exist.
+
+### GREEN and implementation
+
+- `LyricViewController` now owns an open-menu count and exposes `keepControlsVisible`. It notifies only on the first open and final close; unmatched extra closes are ignored.
+- Both source and offset `MenuAnchor` callbacks use the same controller methods. Source receives the pair as constructor callbacks and therefore does not import controls or vertical.
+- `VerticalLyricView` listens to the controller and includes `keepControlsVisible` in its controls-visibility condition, so menu state changes rebuild the host and keep the anchor mounted outside the lyric `MouseRegion`.
+- Targeted controller command: exit 0, 1 test passed.
+- Targeted fix/regression command: `flutter test test/component/lyric_view_controls_test.dart test/page/now_playing_page/lyric_scroll_positioner_test.dart`
+- Result: exit 0, 11 tests passed. Tests use injected preferences and the isolated offset control; no real audio or desktop process starts.
+- `dart format` on the 5 affected Dart files: exit 0.
+- `git diff --check`: exit 0; no whitespace errors (only configured LF-to-CRLF notices).
+
+### Deferred ledger
+
+- Deferred by review scope: serialize/coalesce asynchronous preference saves if rapid clicks demonstrate out-of-order persistence.
+- Deferred by review scope: add broader widget coverage for translation-control visibility and the source menu when a playback-free UI dependency boundary is available.
+
+### Fix commit
+
+- `fix: make lyric menu visibility controller-owned` (hash appended after commit creation).

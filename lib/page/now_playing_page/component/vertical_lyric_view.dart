@@ -10,8 +10,6 @@ import 'package:coriander_player/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-bool ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = false;
-
 class VerticalLyricView extends StatefulWidget {
   const VerticalLyricView({super.key});
 
@@ -53,39 +51,43 @@ class _VerticalLyricViewState extends State<VerticalLyricView> {
           child: ChangeNotifierProvider.value(
             value: lyricViewController,
             child: ListenableBuilder(
-              listenable: PlayService.instance.lyricService,
-              builder: (context, _) => FutureBuilder(
-                future: PlayService.instance.lyricService.currLyricFuture,
-                builder: (context, snapshot) {
-                  final lyricNullable = snapshot.data;
-                  final noLyricWidget = Center(
-                    child: Text(
-                      "无歌词",
-                      style: TextStyle(
-                        fontSize: 22,
-                        color: scheme.onSecondaryContainer,
+              listenable: lyricViewController,
+              builder: (context, _) => ListenableBuilder(
+                listenable: PlayService.instance.lyricService,
+                builder: (context, _) => FutureBuilder(
+                  future: PlayService.instance.lyricService.currLyricFuture,
+                  builder: (context, snapshot) {
+                    final lyricNullable = snapshot.data;
+                    final noLyricWidget = Center(
+                      child: Text(
+                        "无歌词",
+                        style: TextStyle(
+                          fontSize: 22,
+                          color: scheme.onSecondaryContainer,
+                        ),
                       ),
-                    ),
-                  );
+                    );
 
-                  return Stack(
-                    children: [
-                      switch (snapshot.connectionState) {
-                        ConnectionState.none => loadingWidget,
-                        ConnectionState.waiting => loadingWidget,
-                        ConnectionState.active => loadingWidget,
-                        ConnectionState.done => lyricNullable == null
-                            ? noLyricWidget
-                            : _VerticalLyricScrollView(lyric: lyricNullable),
-                      },
-                      if (isHovering || ALWAYS_SHOW_LYRIC_VIEW_CONTROLS)
-                        const Align(
-                          alignment: Alignment.bottomRight,
-                          child: LyricViewControls(),
-                        )
-                    ],
-                  );
-                },
+                    return Stack(
+                      children: [
+                        switch (snapshot.connectionState) {
+                          ConnectionState.none => loadingWidget,
+                          ConnectionState.waiting => loadingWidget,
+                          ConnectionState.active => loadingWidget,
+                          ConnectionState.done => lyricNullable == null
+                              ? noLyricWidget
+                              : _VerticalLyricScrollView(lyric: lyricNullable),
+                        },
+                        if (isHovering ||
+                            lyricViewController.keepControlsVisible)
+                          const Align(
+                            alignment: Alignment.bottomRight,
+                            child: LyricViewControls(),
+                          )
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ),

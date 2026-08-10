@@ -4,7 +4,6 @@ import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/lyric/lyric_presentation.dart';
 import 'package:coriander_player/lyric/lyric_timing.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_source_view.dart';
-import 'package:coriander_player/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -33,11 +32,26 @@ class LyricViewController extends ChangeNotifier {
 
   final NowPlayingPagePreference nowPlayingPagePref;
   final Future<void> Function() _savePreference;
+  int _openControlsMenuCount = 0;
   late LyricTextAlign lyricTextAlign = nowPlayingPagePref.lyricTextAlign;
   late double lyricFontSize = nowPlayingPagePref.lyricFontSize;
   late double translationFontSize = nowPlayingPagePref.translationFontSize;
   int get lyricOffsetMs => nowPlayingPagePref.lyricOffsetMs;
   bool get showTranslation => nowPlayingPagePref.showTranslation;
+  bool get keepControlsVisible => _openControlsMenuCount > 0;
+
+  void openControlsMenu() {
+    final wasVisible = keepControlsVisible;
+    _openControlsMenuCount++;
+    if (!wasVisible) notifyListeners();
+  }
+
+  void closeControlsMenu() {
+    if (_openControlsMenuCount == 0) return;
+
+    _openControlsMenuCount--;
+    if (!keepControlsVisible) notifyListeners();
+  }
 
   void increaseLyricOffset() {
     _setLyricOffsetMs(lyricOffsetMs + lyricOffsetStepMs);
@@ -104,21 +118,25 @@ class LyricViewControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(8.0),
+    final lyricViewController = context.read<LyricViewController>();
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          SetLyricSourceBtn(),
-          SizedBox(height: 8.0),
-          _LyricOffsetBtn(),
-          SizedBox(height: 8.0),
-          _TranslationVisibilityBtn(),
-          SizedBox(height: 8.0),
-          _LyricAlignSwitchBtn(),
-          SizedBox(height: 8.0),
-          Row(
+          SetLyricSourceBtn(
+            onMenuOpen: lyricViewController.openControlsMenu,
+            onMenuClose: lyricViewController.closeControlsMenu,
+          ),
+          const SizedBox(height: 8.0),
+          const _LyricOffsetBtn(),
+          const SizedBox(height: 8.0),
+          const _TranslationVisibilityBtn(),
+          const SizedBox(height: 8.0),
+          const _LyricAlignSwitchBtn(),
+          const SizedBox(height: 8.0),
+          const Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               _IncreaseFontSizeBtn(),
@@ -143,12 +161,8 @@ class _LyricOffsetBtn extends StatelessWidget {
     final offsetLabel = _formatLyricOffset(offset);
 
     return MenuAnchor(
-      onOpen: () {
-        ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = true;
-      },
-      onClose: () {
-        ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = false;
-      },
+      onOpen: lyricViewController.openControlsMenu,
+      onClose: lyricViewController.closeControlsMenu,
       menuChildren: [
         MenuItemButton(
           onPressed: offset <= -lyricOffsetLimitMs
