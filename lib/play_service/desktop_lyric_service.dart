@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
+import 'package:coriander_player/lyric/lyric_presentation.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:coriander_player/play_service/playback_service.dart';
 import 'package:coriander_player/src/bass/bass_player.dart';
@@ -13,6 +15,28 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:desktop_lyric/message.dart' as msg;
+
+msg.LyricLineChangedMessage? desktopLyricLineMessage(
+  LyricLine line, {
+  required bool showTranslation,
+}) {
+  final length = switch (line) {
+    SyncLyricLine() => line.length,
+    LrcLine() => line.length,
+    _ => null,
+  };
+  if (length == null) return null;
+
+  final presentation = presentLyricLine(
+    line,
+    showTranslation: showTranslation,
+  );
+  return msg.LyricLineChangedMessage(
+    presentation.primary,
+    length,
+    presentation.translation,
+  );
+}
 
 class DesktopLyricService extends ChangeNotifier {
   final PlayService playService;
@@ -42,9 +66,9 @@ class DesktopLyricService extends ChangeNotifier {
         nowPlaying?.artist ?? "无",
         nowPlaying?.album ?? "无",
         isDarkMode,
-        currScheme.primary.value,
-        currScheme.surfaceContainer.value,
-        currScheme.onSurface.value,
+        currScheme.primary.toARGB32(),
+        currScheme.surfaceContainer.toARGB32(),
+        currScheme.onSurface.toARGB32(),
       ).toJson())
     ]);
 
@@ -133,9 +157,9 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendThemeMessage(ColorScheme scheme) {
     sendMessage(msg.ThemeChangedMessage(
-      scheme.primary.value,
-      scheme.surfaceContainer.value,
-      scheme.onSurface.value,
+      scheme.primary.toARGB32(),
+      scheme.surfaceContainer.toARGB32(),
+      scheme.onSurface.toARGB32(),
     ));
   }
 
@@ -152,21 +176,11 @@ class DesktopLyricService extends ChangeNotifier {
   }
 
   void sendLyricLineMessage(LyricLine line) {
-    if (line is SyncLyricLine) {
-      sendMessage(msg.LyricLineChangedMessage(
-        line.content,
-        line.length,
-        line.translation,
-      ));
-    } else if (line is LrcLine) {
-      final splitted = line.content.split("┃");
-      final content = splitted.first;
-      final translation = splitted.length > 1 ? splitted[1] : null;
-      sendMessage(msg.LyricLineChangedMessage(
-        content,
-        line.length,
-        translation,
-      ));
-    }
+    final message = desktopLyricLineMessage(
+      line,
+      showTranslation:
+          AppPreference.instance.nowPlayingPagePref.showTranslation,
+    );
+    if (message != null) sendMessage(message);
   }
 }

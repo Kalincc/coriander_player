@@ -1,14 +1,43 @@
 import 'dart:math';
 
+import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
+import 'package:coriander_player/lyric/lyric_presentation.dart';
 import 'package:coriander_player/lyric/lyric_source.dart';
+import 'package:coriander_player/lyric/lyric_timing.dart';
 import 'package:coriander_player/music_matcher.dart';
 import 'package:coriander_player/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+
+LyricLine lyricSourcePreviewLine(
+  Lyric lyric,
+  Duration audioPosition,
+  Duration offset,
+) {
+  final lyricPosition = lyricClockPosition(audioPosition, offset);
+  final index = max(
+    lyric.lines.lastIndexWhere((line) => line.start <= lyricPosition),
+    0,
+  );
+  return lyric.lines[index];
+}
+
+String lyricSourcePreviewText(
+  LyricLine line, {
+  required bool showTranslation,
+}) {
+  final presentation = presentLyricLine(
+    line,
+    showTranslation: showTranslation,
+  );
+  final translation = presentation.translation;
+  return '当前：${presentation.primary}'
+      '${translation == null ? '' : '┃$translation'}';
+}
 
 class SetLyricSourceBtn extends StatelessWidget {
   const SetLyricSourceBtn({super.key});
@@ -22,6 +51,7 @@ class SetLyricSourceBtn extends StatelessWidget {
         builder: (context, snapshot) {
           const loadingWidget = IconButton(
             onPressed: null,
+            tooltip: '歌词来源',
             icon: SizedBox(
               height: 20,
               width: 20,
@@ -93,6 +123,7 @@ class _SetLyricSourceBtn extends StatelessWidget {
                 }
               },
         icon: const Icon(Symbols.lyrics),
+        tooltip: '选择歌词来源',
         color: scheme.onSecondaryContainer,
       ),
     );
@@ -269,29 +300,25 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
       subtitle: StreamBuilder(
         stream: PlayService.instance.playbackService.positionStream,
         builder: (context, positionSnapshot) {
-          final currLineIndex = max(lyric.lines.lastIndexWhere(
-            (element) {
-              return element.start.inMilliseconds <
-                  (positionSnapshot.data ?? 0) * 1000;
-            },
-          ), 0);
-
-          final LyricLine currLine = lyric.lines[currLineIndex];
-          if (currLine is LrcLine) {
-            return Text(
-              "当前：${currLine.content}",
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            );
-          } else {
-            final syncLine = currLine as SyncLyricLine;
-
-            return Text(
-              "当前：${syncLine.content}${syncLine.translation != null ? "┃${syncLine.translation}" : ""}",
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            );
-          }
+          final playbackPosition = Duration(
+            microseconds:
+                ((positionSnapshot.data ?? 0) * Duration.microsecondsPerSecond)
+                    .round(),
+          );
+          final currLine = lyricSourcePreviewLine(
+            lyric,
+            playbackPosition,
+            PlayService.instance.lyricService.lyricOffset,
+          );
+          return Text(
+            lyricSourcePreviewText(
+              currLine,
+              showTranslation:
+                  AppPreference.instance.nowPlayingPagePref.showTranslation,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
         },
       ),
     );
