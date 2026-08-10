@@ -6,7 +6,9 @@ import 'package:coriander_player/page/now_playing_page/component/lyric_view_cont
 import 'package:coriander_player/page/now_playing_page/page.dart';
 import 'package:coriander_player/page/uni_page.dart';
 import 'package:coriander_player/play_service/playback_service.dart';
+import 'package:coriander_player/lyric/lyric_timing.dart';
 import 'package:coriander_player/utils.dart';
+import 'package:flutter/foundation.dart';
 
 class PagePreference {
   int sortMethod;
@@ -28,34 +30,58 @@ class PagePreference {
       );
 }
 
-class NowPlayingPagePreference {
+class NowPlayingPagePreference extends ChangeNotifier {
   NowPlayingViewMode nowPlayingViewMode;
   LyricTextAlign lyricTextAlign;
   double lyricFontSize;
   double translationFontSize;
+  int lyricOffsetMs;
+  bool showTranslation;
 
   NowPlayingPagePreference(
     this.nowPlayingViewMode,
     this.lyricTextAlign,
     this.lyricFontSize,
-    this.translationFontSize,
-  );
+    this.translationFontSize, {
+    int lyricOffsetMs = 0,
+    this.showTranslation = true,
+  }) : lyricOffsetMs = clampLyricOffsetMs(lyricOffsetMs);
 
   Map toMap() => {
         "nowPlayingViewMode": nowPlayingViewMode.name,
         "lyricTextAlign": lyricTextAlign.name,
         "lyricFontSize": lyricFontSize,
         "translationFontSize": translationFontSize,
+        "lyricOffsetMs": lyricOffsetMs,
+        "showTranslation": showTranslation,
       };
 
   factory NowPlayingPagePreference.fromMap(Map map) {
+    final rawOffset = map["lyricOffsetMs"];
+    final rawShowTranslation = map["showTranslation"];
     return NowPlayingPagePreference(
       NowPlayingViewMode.fromString(map["nowPlayingViewMode"]) ??
           NowPlayingViewMode.withLyric,
       LyricTextAlign.fromString(map["lyricTextAlign"]) ?? LyricTextAlign.left,
       map["lyricFontSize"] ?? 22.0,
       map["translationFontSize"] ?? 18.0,
+      lyricOffsetMs:
+          rawOffset is num ? clampLyricOffsetMs(rawOffset.toInt()) : 0,
+      showTranslation: rawShowTranslation is bool ? rawShowTranslation : true,
     );
+  }
+
+  void setLyricOffsetMs(int value) {
+    final clampedValue = clampLyricOffsetMs(value);
+    if (lyricOffsetMs == clampedValue) return;
+    lyricOffsetMs = clampedValue;
+    notifyListeners();
+  }
+
+  void setShowTranslation(bool value) {
+    if (showTranslation == value) return;
+    showTranslation = value;
+    notifyListeners();
   }
 }
 
