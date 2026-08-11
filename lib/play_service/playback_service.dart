@@ -4,21 +4,11 @@ import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:coriander_player/play_service/playback_history_service.dart';
-import 'package:coriander_player/play_service/playback_queue_service.dart';
 import 'package:coriander_player/src/bass/bass_player.dart';
 import 'package:coriander_player/src/rust/api/smtc_flutter.dart';
 import 'package:coriander_player/theme_provider.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/foundation.dart';
-
-List<Audio> queueSnapshotForShuffleRestore(Iterable<Audio> queue) =>
-    List<Audio>.from(queue);
-
-Future<bool> appendToPlaybackQueue(
-  PlaybackQueueService? queueService,
-  Audio audio,
-) async =>
-    queueService != null && await queueService.append(audio);
 
 void finalizePlaybackHistorySession(PlaybackHistoryService? historyService) {
   if (historyService == null) return;
@@ -46,7 +36,27 @@ enum PlayMode {
 }
 
 /// 只通知 now playing 变更
-class PlaybackService extends ChangeNotifier {
+abstract class PlaybackPlaylistController implements Listenable {
+  ValueListenable<List<Audio>> get playlist;
+  int get playlistIndex;
+  void playIndexOfPlaylist(int audioIndex);
+}
+
+class PlaybackPlaylistContext {
+  List<Audio> _items = [];
+  int _currentIndex = 0;
+
+  List<Audio> get items => List.unmodifiable(_items);
+  int get currentIndex => _currentIndex;
+
+  void play(int audioIndex, Iterable<Audio> playlist) {
+    _items = List<Audio>.from(playlist);
+    _currentIndex = audioIndex;
+  }
+}
+
+class PlaybackService extends ChangeNotifier
+    implements PlaybackPlaylistController {
   final PlayService playService;
 
   late StreamSubscription _playerStateStreamSub;
@@ -105,9 +115,6 @@ class PlaybackService extends ChangeNotifier {
 
   Audio? nowPlaying;
 
-  PlaybackQueueService? _playbackQueueService;
-  PlaybackQueueService? get playbackQueueService => _playbackQueueService;
-
   PlaybackHistoryService? _playbackHistoryService;
   PlaybackHistoryService? get playbackHistoryService => _playbackHistoryService;
 
@@ -128,64 +135,18 @@ class PlaybackService extends ChangeNotifier {
   }
 
   int? _playlistIndex;
+  @override
   int get playlistIndex => _playlistIndex ?? 0;
 
+  @override
   final ValueNotifier<List<Audio>> playlist = ValueNotifier([]);
   List<Audio> _playlistBackup = [];
+  final playbackContext = PlaybackPlaylistContext();
 
-  void attachQueue(PlaybackQueueService queueService) {
-    if (identical(_playbackQueueService, queueService)) return;
-    _playbackQueueService?.removeListener(_syncPlaylistFromQueue);
-    _playbackQueueService = queueService;
-    queueService.addListener(_syncPlaylistFromQueue);
-    _syncPlaylistFromQueue();
-    _playlistBackup = queueSnapshotForShuffleRestore(queueService.items);
-  }
-
-  void _syncPlaylistFromQueue() {
-    final queueService = _playbackQueueService;
-    if (queueService == null) return;
-
-    playlist.value = List.of(queueService.items);
-    final index = queueService.currentIndex;
-    _playlistIndex = index < 0 ? null : index;
-    nowPlaying = index < 0 ? null : queueService.items[index];
-    notifyListeners();
-  }
-
-  void _persistQueue(Future<void>? operation) {
-    if (operation == null) return;
-    unawaited(operation.catchError((err, trace) {
-      LOGGER.e('[playback queue] $err', stackTrace: trace);
-    }));
-  }
-
-  void _setQueue(
-    Iterable<Audio> audios, {
-    Audio? current,
-    Duration position = Duration.zero,
-  }) {
-    final queueService = _playbackQueueService;
-    if (queueService == null) {
-      playlist.value = List.of(audios);
-      _playlistIndex = current == null ? null : playlist.value.indexOf(current);
-      return;
-    }
-    _persistQueue(queueService.setQueue(
-      audios,
-      currentPath: current?.path,
-      position: position,
-    ));
-  }
-
-  void _saveQueuePosition() {
-    final queueService = _playbackQueueService;
-    final nowPlaying = this.nowPlaying;
-    if (queueService == null || nowPlaying == null) return;
-    _persistQueue(queueService.setCurrent(
-      audio: nowPlaying,
-      position: Duration(milliseconds: (_player.position * 1000).round()),
-    ));
+  void _replacePlaylist(Iterable<Audio> audios, int currentIndex) {
+    playbackContext.play(currentIndex, audios);
+    playlist.value = playbackContext.items;
+    _playlistIndex = currentIndex;
   }
 
   late final _playMode = ValueNotifier(_pref.playMode);
@@ -236,10 +197,6 @@ class PlaybackService extends ChangeNotifier {
       _player.setSource(audio.path);
       _playlistIndex = audioIndex;
       nowPlaying = audio;
-      _persistQueue(_playbackQueueService?.setCurrent(
-        audio: nowPlaying,
-        position: initialPosition,
-      ));
       setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
 
       playService.lyricService.updateLyric();
@@ -272,6 +229,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   /// 播放当前播放列表的第几项，只能用在播放列表界面
+  @override
   void playIndexOfPlaylist(int audioIndex) {
     unawaited(_loadAndPlay(audioIndex, playlist.value));
   }
@@ -284,13 +242,12 @@ class PlaybackService extends ChangeNotifier {
       shuffled.shuffle();
       shuffled.insert(0, willPlay);
       _playlistBackup = List.from(playlist);
-      _setQueue(shuffled, current: willPlay);
+      _replacePlaylist(shuffled, 0);
       unawaited(_loadAndPlay(0, shuffled));
     } else {
       final queue = List<Audio>.from(playlist);
-      final willPlay = queue[audioIndex];
       _playlistBackup = List.from(playlist);
-      _setQueue(queue, current: willPlay);
+      _replacePlaylist(queue, audioIndex);
       unawaited(_loadAndPlay(audioIndex, queue));
     }
   }
@@ -302,20 +259,12 @@ class PlaybackService extends ChangeNotifier {
     shuffle.value = true;
 
     if (shuffled.isEmpty) return;
-    _setQueue(shuffled, current: shuffled.first);
+    _replacePlaylist(shuffled, 0);
     unawaited(_loadAndPlay(0, shuffled));
   }
 
   /// 下一首播放
   void addToNext(Audio audio) {
-    final queueService = _playbackQueueService;
-    if (queueService != null) {
-      final insertion = queueService.insertNext(audio);
-      _playlistBackup = queueSnapshotForShuffleRestore(queueService.items);
-      _persistQueue(insertion);
-      return;
-    }
-
     if (_playlistIndex != null && !playlist.value.contains(audio)) {
       final queue = List<Audio>.from(playlist.value)
         ..insert(_playlistIndex! + 1, audio);
@@ -324,63 +273,23 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
-  Future<bool> appendToQueue(Audio audio) async {
-    return appendToPlaybackQueue(_playbackQueueService, audio);
-  }
-
-  Future<void> removeFromQueue(int index) async {
-    final queueService = _playbackQueueService;
-    if (queueService == null ||
-        index < 0 ||
-        index >= queueService.items.length) {
-      return;
-    }
-    if (index == queueService.currentIndex) {
-      _stopCurrentQueuePlayback();
-    }
-    await queueService.removeAt(index);
-  }
-
-  Future<void> clearQueue() async {
-    final queueService = _playbackQueueService;
-    if (queueService == null) return;
-    if (queueService.currentIndex >= 0) {
-      _stopCurrentQueuePlayback();
-    }
-    await queueService.clear();
-  }
-
-  void _stopCurrentQueuePlayback() {
-    try {
-      _playbackHistoryService?.recordPosition(
-        Duration(milliseconds: (_player.position * 1000).round()),
-      );
-      _player.pause();
-    } catch (err, trace) {
-      LOGGER.e('[queue playback stop] $err', stackTrace: trace);
-    } finally {
-      _endHistorySession();
-      _smtc.updateState(state: SMTCState.paused);
-    }
-  }
-
   void useShuffle(bool flag) {
     if (nowPlaying == null) return;
     if (flag == shuffle.value) return;
 
     if (flag) {
-      _playlistBackup = queueSnapshotForShuffleRestore(playlist.value);
+      _playlistBackup = List<Audio>.from(playlist.value);
       final shuffled = List<Audio>.from(playlist.value)..shuffle();
       shuffled.remove(nowPlaying!);
       shuffled.insert(0, nowPlaying!);
-      _setQueue(shuffled, current: nowPlaying!);
+      _replacePlaylist(shuffled, 0);
       _playlistIndex = 0;
       shuffle.value = true;
     } else {
       final original = _playlistBackup.isEmpty
-          ? queueSnapshotForShuffleRestore(playlist.value)
+          ? List<Audio>.from(playlist.value)
           : List<Audio>.from(_playlistBackup);
-      _setQueue(original, current: nowPlaying!);
+      _replacePlaylist(original, original.indexOf(nowPlaying!));
       _playlistIndex = original.indexOf(nowPlaying!);
       shuffle.value = false;
     }
@@ -444,7 +353,6 @@ class PlaybackService extends ChangeNotifier {
   void pause() {
     try {
       _player.pause();
-      _saveQueuePosition();
       _playbackHistoryService?.recordPosition(
         Duration(milliseconds: (_player.position * 1000).round()),
       );
@@ -467,8 +375,7 @@ class PlaybackService extends ChangeNotifier {
       if (_player.playerState == PlayerState.unknown &&
           nowPlaying != null &&
           _playlistIndex != null) {
-        final position = _playbackQueueService?.savedPosition ?? Duration.zero;
-        unawaited(_resumeFromSavedState(position));
+        unawaited(_resumeFromSavedState(Duration.zero));
         return;
       }
       final wasPlaying = _player.playerState == PlayerState.playing;
@@ -515,7 +422,6 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void close() {
-    _saveQueuePosition();
     _playbackHistoryService?.recordPosition(
       Duration(milliseconds: (_player.position * 1000).round()),
     );
@@ -523,7 +429,6 @@ class PlaybackService extends ChangeNotifier {
     _playerStateStreamSub.cancel();
     _smtcEventStreamSub.cancel();
     _positionStreamSub.cancel();
-    _playbackQueueService?.removeListener(_syncPlaylistFromQueue);
     _player.free();
     _smtc.close();
   }
