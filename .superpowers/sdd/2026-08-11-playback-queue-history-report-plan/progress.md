@@ -19,3 +19,11 @@ Task 4: implementation `595e612` (history/queue lifecycle, queue editor, protect
 Task 4: review found Critical startup attach gap plus Important current-item state, blocking history I/O, and seek accounting issues.
 Task 4: fix round 1 `c825229`; review READY (`task-4-rereview.md`, 17/17 scoped tests, targeted analyze/diff clean).
 Task 4: complete (`595e612`, `c825229`; startup load/attach and runtime lifecycle now wired).
+Task 5: implementation `af6c85b` (recursive incremental scanner/coordinator; Dart 27 scoped tests; Cargo unavailable).
+Task 5: review found legacy-root/size migration Critical issues and missing post-scan queue/playlist/history reconciliation.
+Task 5: fix round 1 `8de5d8f`; review still found unsafe nested legacy root guessing.
+Task 5: fix round 2 `f73a77e`; review found fixed-depth promotion could scan outside library.
+Task 5: fix round 3 `3aa0142`; legacy indexes without persisted roots now safely require a user-triggered full rebuild.
+Task 5: fix round 4 `3b020b6`; startup exposes rebuild recovery and Rust scan I/O errors abort before index write/reconcile.
+Task 5: fix round 5 `f00f63f`; format gate corrected. Final review READY (`task-5-rereview5.md`); Cargo/Rust tests unavailable and not run.
+Task 5: complete (`af6c85b`, `8de5d8f`, `f73a77e`, `3aa0142`, `3b020b6`, `f00f63f`; 42+ scoped Dart tests across rounds).
