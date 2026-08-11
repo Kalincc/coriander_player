@@ -952,10 +952,14 @@ fn roots_from_index(index: &serde_json::Value) -> Vec<PathBuf> {
         .filter_map(|folder| folder["path"].as_str())
         .filter_map(|path| {
             let folder = PathBuf::from(path);
-            let candidate = folder
+            let parent = folder
                 .parent()
                 .filter(|parent| parent.parent().is_some())
                 .unwrap_or(&folder);
+            let candidate = parent
+                .parent()
+                .filter(|grandparent| grandparent.parent().is_some())
+                .unwrap_or(parent);
             normalize_index_path(candidate).ok()
         })
         .collect();
@@ -1213,6 +1217,34 @@ mod tests {
         let legacy = serde_json::json!({
             "version": 110,
             "folders": [{"path": artist_a.to_string_lossy(), "audios": []}],
+        });
+        let roots = roots_from_index(&legacy);
+        let scanned = scan_audio_paths(&roots).unwrap();
+
+        assert!(scanned.contains_key(&normalize_index_path(&new_song).unwrap()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn migrates_nested_legacy_albums_to_the_library_root() {
+        let root = std::env::temp_dir().join(format!(
+            "coriander-legacy-nested-roots-{}",
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let artist_a_album = root.join("ArtistA").join("Album1");
+        let artist_b_album = root.join("ArtistB").join("Album1");
+        fs::create_dir_all(&artist_a_album).unwrap();
+        fs::create_dir_all(&artist_b_album).unwrap();
+        fs::write(artist_a_album.join("known.mp3"), b"known").unwrap();
+        let new_song = artist_b_album.join("new.mp3");
+        fs::write(&new_song, b"new").unwrap();
+
+        let legacy = serde_json::json!({
+            "version": 110,
+            "folders": [{"path": artist_a_album.to_string_lossy(), "audios": []}],
         });
         let roots = roots_from_index(&legacy);
         let scanned = scan_audio_paths(&roots).unwrap();
