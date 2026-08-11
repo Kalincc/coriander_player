@@ -106,6 +106,24 @@ void main() {
     expect(history.recent20.last.startedAt, DateTime(2026, 8, 2, 2));
   });
 
+  test('does not count pre-pause position in a resumed session', () async {
+    final audio = makeAudio('D:/music/resumed.flac');
+
+    history.startSession(audio);
+    history.recordPosition(const Duration(seconds: 30));
+    await history.endSession();
+
+    history.startSession(
+      audio,
+      initialPosition: const Duration(seconds: 30),
+    );
+    history.recordPosition(const Duration(seconds: 31));
+    await history.endSession();
+
+    expect(history.events, hasLength(1));
+    expect(history.events.single.listened, const Duration(seconds: 30));
+  });
+
   test('removes records older than twelve months while loading', () async {
     final store = LocalJsonStore(directory);
     await store.writeAtomically('play_history.json', {

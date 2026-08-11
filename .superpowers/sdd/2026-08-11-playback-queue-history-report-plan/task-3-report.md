@@ -51,3 +51,15 @@ are not part of this task.
 This task exposes the history service but does not attach it to BASS playback
 events. Task 4 owns lifecycle calls for load/start/pause/switch/completion/
 close and the UI consumers.
+
+## Fix round 1
+
+Review found that a resumed playback session could treat the player's absolute
+position as newly listened time. `startSession` now accepts an optional
+`initialPosition`, and `recordPosition` records only the non-negative maximum
+of `position - initialPosition`. A RED regression test demonstrated that the
+new named parameter was missing; after implementation, a session resumed at
+30 seconds and advanced to 31 seconds does not create a second qualified
+event.
+
+Verification reran the required three targeted test files: 7 tests passed.

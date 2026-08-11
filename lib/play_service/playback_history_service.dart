@@ -52,14 +52,26 @@ class PlaybackHistoryService extends ChangeNotifier {
     }
   }
 
-  void startSession(Audio audio, {DateTime? startedAt}) {
-    _session = _PlaybackSession(audio, startedAt ?? _now());
+  void startSession(
+    Audio audio, {
+    DateTime? startedAt,
+    Duration initialPosition = Duration.zero,
+  }) {
+    _session = _PlaybackSession(
+      audio,
+      startedAt ?? _now(),
+      initialPosition,
+    );
   }
 
   void recordPosition(Duration position) {
     final session = _session;
-    if (session == null || position <= session.listened) return;
-    session.listened = position;
+    if (session == null) return;
+    final listened = position >= session.initialPosition
+        ? position - session.initialPosition
+        : Duration.zero;
+    if (listened <= session.listened) return;
+    session.listened = listened;
   }
 
   Future<void> endSession() async {
@@ -114,10 +126,11 @@ class PlaybackHistoryService extends ChangeNotifier {
 }
 
 class _PlaybackSession {
-  _PlaybackSession(this.audio, this.startedAt);
+  _PlaybackSession(this.audio, this.startedAt, this.initialPosition);
 
   final Audio audio;
   final DateTime startedAt;
+  final Duration initialPosition;
   var listened = Duration.zero;
 }
 
