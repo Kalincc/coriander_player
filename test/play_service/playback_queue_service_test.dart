@@ -97,6 +97,24 @@ void main() {
     expect(queue.savedPosition, Duration.zero);
   });
 
+  test('starts with an empty inert queue when optional recovery files corrupt',
+      () async {
+    final available = makeAudio('D:/music/available.flac');
+    final primary = File(
+      '${directory.path}${Platform.pathSeparator}playback_queue.json',
+    );
+    await File('${primary.path}.tmp').writeAsString('{unfinished write');
+    await File('${primary.path}.bak').writeAsString('{invalid backup');
+
+    final queue = PlaybackQueueService(store: store);
+
+    await queue.load([available]);
+
+    expect(queue.items, isEmpty);
+    expect(queue.currentPath, isNull);
+    expect(queue.savedPosition, Duration.zero);
+  });
+
   test('edits the queue without duplicates and keeps current song consistent',
       () async {
     final first = makeAudio('D:/music/first.flac');

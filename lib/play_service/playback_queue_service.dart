@@ -28,7 +28,14 @@ class PlaybackQueueService extends ChangeNotifier {
   }
 
   Future<void> load(Iterable<Audio> library) async {
-    final raw = await store.read(_fileName);
+    Object? raw;
+    try {
+      raw = await store.read(_fileName);
+    } catch (error) {
+      debugPrint('[playback queue] failed to load: $error');
+      _apply(const [], null, Duration.zero);
+      return;
+    }
     final saved = raw is Map ? raw : const <Object?, Object?>{};
     final resolved = _resolvePaths(saved['items'], library);
     final current = _resolveCurrentPath(saved['currentPath'], resolved);

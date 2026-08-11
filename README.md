@@ -1,5 +1,12 @@
 # Coriander Player：一款使用 Material You 配色的本地音乐播放器。
 
+## 本 fork 的播放数据与升级说明
+
+- 播放队列会在重启后恢复，但不会自动开始播放；已不存在的本地文件只会从队列、歌单和历史记录中清理，不会删除你的音乐文件。
+- 新增受保护的“我喜欢”歌单：播放界面的爱心按钮会把当前歌曲加入或移出该歌单；它不能被重命名或删除。
+- 播放满 30 秒或歌曲时长的 50%（以先达到者为准）才计入有效播放。历史页面展示最近 20 首，听歌报告提供本周、本月和最近 12 个月的歌曲、歌手、专辑 Top 10 与听歌时长统计。
+- 以上数据仅保存在本机，不会上传、同步或修改音频标签。
+
 > [!NOTE]
 > 本仓库是 [Ferry-200/coriander_player](https://github.com/Ferry-200/coriander_player) 的个人功能增强 fork。原项目及其版权、许可证归原作者和贡献者所有。
 
@@ -27,6 +34,14 @@ scoop bucket add jin https://github.com/jinzhongjia/scoop-bucket
 # 安装
 scoop install jin/coriander_player
 ```
+
+## 升级、备份与迁移
+
+用户数据统一保存在 Windows 的 `Documents\coriander_player` 目录，而不在软件安装目录中。因此正常覆盖安装、卸载后重新安装或通过新版安装包升级，都不会删除你的歌单、播放队列和听歌历史。
+
+如需备份，请在播放器关闭后直接复制整个 `Documents\coriander_player` 文件夹；恢复时再覆盖回同一路径。手动删除该文件夹会永久清除歌单（包括“我喜欢”）、播放队列和听歌历史，且无法由安装程序恢复。
+
+从旧版首次升级时，旧的 `playlists.json` 会自动保留原有歌曲并补建“我喜欢”歌单；缺失或损坏的队列、历史临时文件会以空数据启动，不会自动播放。若旧版音乐索引没有保存扫描根目录，请到“设置 → 文件夹管理”执行一次完整重建扫描，之后增量扫描即可正常工作。
 
 ## 其他平台支持
 - MacOS: [https://github.com/marscey/coriander_player/tree/macos-platform](https://github.com/marscey/coriander_player/tree/macos-platform)
