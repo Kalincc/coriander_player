@@ -1,4 +1,5 @@
 import 'package:coriander_player/app_paths.dart' as app_paths;
+import 'package:coriander_player/component/artwork_thumbnail.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/listening_report.dart';
 import 'package:coriander_player/library/playback_history_models.dart';
@@ -114,7 +115,7 @@ class _ReportContent extends StatelessWidget {
           _RankSection(
             title: '歌曲 Top 10',
             ranks: report.songRanks,
-            total: report.totalListened,
+            artworkFor: (rank) => metadata.audiosByPath[rank.key]?.cover,
             destinationFor: (rank) {
               final audio = metadata.audiosByPath[rank.key];
               return audio == null
@@ -126,7 +127,9 @@ class _ReportContent extends StatelessWidget {
           _RankSection(
             title: '歌手 Top 10',
             ranks: report.artistRanks,
-            total: report.totalListened,
+            artworkFor: (rank) => _firstAvailableArtwork(
+              metadata.artistsByName[rank.key]?.works ?? const [],
+            ),
             destinationFor: (rank) {
               final artist = metadata.artistsByName[rank.key];
               return artist == null
@@ -138,7 +141,10 @@ class _ReportContent extends StatelessWidget {
           _RankSection(
             title: '专辑 Top 10',
             ranks: report.albumRanks,
-            total: report.totalListened,
+            artworkFor: (rank) {
+              final works = metadata.albumsByName[rank.key]?.works;
+              return works == null || works.isEmpty ? null : works.first.cover;
+            },
             destinationFor: (rank) {
               final album = metadata.albumsByName[rank.key];
               return album == null
@@ -251,58 +257,96 @@ class _RankSection extends StatelessWidget {
   const _RankSection({
     required this.title,
     required this.ranks,
-    required this.total,
+    required this.artworkFor,
     required this.destinationFor,
   });
 
   final String title;
   final List<ListeningRank> ranks;
-  final Duration total;
+  final Future<ImageProvider?>? Function(ListeningRank rank) artworkFor;
   final _ReportDestination? Function(ListeningRank rank) destinationFor;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              if (ranks.isEmpty)
-                const Text('暂无数据')
-              else
-                ...ranks.indexed.map((entry) {
-                  final rank = entry.$2;
-                  final destination = destinationFor(rank);
-                  final ratio = total.inMilliseconds == 0
-                      ? 0.0
-                      : rank.listened.inMilliseconds / total.inMilliseconds;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Text('${entry.$1 + 1}'),
-                    title: Text(rank.name),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                            '${rank.playCount} 次 · ${_formatDuration(rank.listened)}'),
-                        const SizedBox(height: 4),
-                        LinearProgressIndicator(
-                          value: ratio.clamp(0.0, 1.0).toDouble(),
+  Widget build(BuildContext context) {
+    final maxPlayCount = ranks.fold<int>(
+      0,
+      (maximum, candidate) =>
+          candidate.playCount > maximum ? candidate.playCount : maximum,
+    );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            if (ranks.isEmpty)
+              const Text('暂无数据')
+            else
+              ...ranks.indexed.map((entry) {
+                final rank = entry.$2;
+                final destination = destinationFor(rank);
+                final ratio =
+                    maxPlayCount == 0 ? 0.0 : rank.playCount / maxPlayCount;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        child: Text('${entry.$1 + 1}'),
+                      ),
+                      const SizedBox(width: 8),
+                      ArtworkThumbnail(image: artworkFor(rank), size: 48),
+                    ],
+                  ),
+                  title: Text(rank.name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          '${rank.playCount} 次 · ${_formatDuration(rank.listened)}'),
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        height: 8,
+                        width: double.infinity,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: FractionallySizedBox(
+                            key: ValueKey('rank-bar-${rank.name}'),
+                            alignment: Alignment.centerLeft,
+                            widthFactor: ratio.clamp(0.0, 1.0).toDouble(),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
-                    onTap: destination == null
-                        ? null
-                        : () => context.push(destination.path,
-                            extra: destination.extra),
-                  );
-                }),
-            ],
-          ),
+                      ),
+                    ],
+                  ),
+                  onTap: destination == null
+                      ? null
+                      : () => context.push(destination.path,
+                          extra: destination.extra),
+                );
+              }),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _ReportDestination {
@@ -338,14 +382,22 @@ class _RecentHistorySection extends StatelessWidget {
               ...recent.indexed.map((entry) {
                 final index = entry.$1;
                 final event = entry.$2;
-                final title = audiosByPath[event.path]?.title.trim();
+                final audio = audiosByPath[event.path];
+                final title = audio?.title.trim();
                 return ListTile(
                   key: ValueKey(recentHistoryItemKey(event, index)),
                   contentPadding: EdgeInsets.zero,
+                  leading: ArtworkThumbnail(image: audio?.cover, size: 48),
                   title: Text(title?.isNotEmpty == true ? title! : event.path),
                   subtitle: Text(
                     '${_formatDuration(event.listened)} · ${_formatHistoryTime(event.startedAt)}',
                   ),
+                  onTap: audio == null
+                      ? null
+                      : () => context.push(
+                            app_paths.AUDIO_DETAIL_PAGE,
+                            extra: audio,
+                          ),
                 );
               }),
           ],
@@ -353,6 +405,18 @@ class _RecentHistorySection extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<ImageProvider?> _firstAvailableArtwork(Iterable<Audio> works) async {
+  for (final work in works) {
+    try {
+      final artwork = await work.cover;
+      if (artwork != null) return artwork;
+    } catch (_) {
+      // Continue to the next work before falling back to the app icon.
+    }
+  }
+  return null;
 }
 
 class _ReportMetadata {

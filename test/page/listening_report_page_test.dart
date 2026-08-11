@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:coriander_player/app_paths.dart' as app_paths;
+import 'package:coriander_player/component/artwork_thumbnail.dart';
 import 'package:coriander_player/component/side_nav.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/listening_report.dart';
@@ -159,7 +160,7 @@ void main() {
     expect(find.text('1 次'), findsOneWidget);
   });
 
-  testWidgets('shows the twenty most recent plays as inert rows',
+  testWidgets('shows the twenty most recent plays with detail navigation only',
       (tester) async {
     final now = DateTime(2026, 8, 5, 14);
     final history = PlaybackHistoryService(
@@ -246,7 +247,126 @@ void main() {
             ),
           )
           .onTap,
-      isNull,
+      isNotNull,
+    );
+  });
+
+  testWidgets('uses artwork thumbnails for every report rank and recent play',
+      (tester) async {
+    final now = DateTime(2026, 8, 5, 14);
+    final audio = _CoverAudio(
+      path: 'D:/music/artwork.flac',
+      title: 'Artwork song',
+      coverImage: const AssetImage('app_icon.ico'),
+    );
+    final history = await _historyWithQualifiedPlay(audio, now);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListeningReportPage(
+            historyService: history,
+            audios: [audio],
+            now: () => now,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Artwork song').first,
+        matching: find.byType(ArtworkThumbnail),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<ArtworkThumbnail>(
+            find.descendant(
+              of: find.widgetWithText(ListTile, 'Artwork song').first,
+              matching: find.byType(ArtworkThumbnail),
+            ),
+          )
+          .image,
+      isNotNull,
+    );
+
+    await tester.scrollUntilVisible(find.text('Test artist'), 400);
+    expect(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Test artist'),
+        matching: find.byType(ArtworkThumbnail),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.scrollUntilVisible(find.text('Test album'), 400);
+    expect(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Test album'),
+        matching: find.byType(ArtworkThumbnail),
+      ),
+      findsOneWidget,
+    );
+
+    final event = PlaybackHistoryEvent(
+      path: audio.path,
+      startedAt: now,
+      listened: const Duration(seconds: 30),
+      qualified: true,
+    );
+    final recentItem = find.byKey(ValueKey(recentHistoryItemKey(event, 0)));
+    await tester.scrollUntilVisible(recentItem, 400);
+    expect(
+      find.descendant(of: recentItem, matching: find.byType(ArtworkThumbnail)),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('scales report bars to the highest play count in each section',
+      (tester) async {
+    final now = DateTime(2026, 8, 5, 14);
+    final leader = _audio(
+      path: 'D:/music/leader.flac',
+      title: 'Chart leader',
+    );
+    final follower = _audio(
+      path: 'D:/music/follower.flac',
+      title: 'Chart follower',
+    );
+    final history = await _historyWithQualifiedPlays(
+      [leader, leader, follower],
+      now,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListeningReportPage(
+            historyService: history,
+            audios: [leader, follower],
+            now: () => now,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester
+          .widget<FractionallySizedBox>(
+            find.byKey(const ValueKey('rank-bar-Chart leader')),
+          )
+          .widthFactor,
+      1.0,
+    );
+    expect(
+      tester
+          .widget<FractionallySizedBox>(
+            find.byKey(const ValueKey('rank-bar-Chart follower')),
+          )
+          .widthFactor,
+      0.5,
     );
   });
 
@@ -417,6 +537,31 @@ Audio _audio({required String path, required String title}) => Audio(
       1,
       'Lofty',
     );
+
+class _CoverAudio extends Audio {
+  _CoverAudio({
+    required String path,
+    required String title,
+    required this.coverImage,
+  }) : super(
+          title,
+          'Test artist',
+          'Test album',
+          1,
+          180,
+          320,
+          44100,
+          path,
+          1,
+          1,
+          'Lofty',
+        );
+
+  final ImageProvider? coverImage;
+
+  @override
+  Future<ImageProvider?> get cover => Future.value(coverImage);
+}
 
 class _MemoryStore extends LocalJsonStore {
   _MemoryStore() : super(Directory('listening-report-memory'));
