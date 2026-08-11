@@ -7,6 +7,21 @@ import 'package:coriander_player/play_service/playback_history_service.dart';
 import 'package:coriander_player/play_service/playback_queue_service.dart';
 import 'package:coriander_player/play_service/playback_service.dart';
 
+class PlaybackDataInitializer {
+  PlaybackDataInitializer({
+    required this.loadQueue,
+    required this.loadHistory,
+  });
+
+  final Future<void> Function(Iterable<Audio> library) loadQueue;
+  final Future<void> Function() loadHistory;
+
+  Future<void> initialize(Iterable<Audio> library) async {
+    await loadQueue(library);
+    await loadHistory();
+  }
+}
+
 class PlayService {
   late final playbackService = PlaybackService(this);
   late final lyricService = LyricService(this);
@@ -42,6 +57,13 @@ class PlayService {
     await historyService.load();
     _loadedPlaybackHistoryService = historyService;
     playbackService.attachHistory(historyService);
+  }
+
+  Future<void> initializePlaybackData(Iterable<Audio> library) async {
+    await PlaybackDataInitializer(
+      loadQueue: loadPlaybackQueue,
+      loadHistory: loadPlaybackHistory,
+    ).initialize(library);
   }
 
   Future<PlaybackQueueService> _createPlaybackQueueService() async {

@@ -85,7 +85,13 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                       tooltip: 'Clear queue',
                       onPressed: items.isEmpty || queue == null
                           ? null
-                          : () => queue.clear(),
+                          : () {
+                              if (playback != null) {
+                                playback.clearQueue();
+                              } else {
+                                queue.clear();
+                              }
+                            },
                       icon: const Icon(Symbols.clear_all),
                       color: scheme.onSecondaryContainer,
                     ),
@@ -117,7 +123,13 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                           },
                           onRemove: queue == null
                               ? null
-                              : () => queue.removeAt(index),
+                              : () {
+                                  if (playback != null) {
+                                    playback.removeFromQueue(index);
+                                  } else {
+                                    queue.removeAt(index);
+                                  }
+                                },
                         ),
                       ),
               ),

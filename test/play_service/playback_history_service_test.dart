@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/local_json_store.dart';
 import 'package:coriander_player/play_service/playback_history_service.dart';
+import 'package:coriander_player/play_service/playback_service.dart';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
 import 'package:coriander_player/src/rust/frb_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -124,6 +126,60 @@ void main() {
     expect(history.events.single.listened, const Duration(seconds: 30));
   });
 
+  test('does not count a seek jump as listened time', () async {
+    final audio = makeAudio('D:/music/seeked.flac');
+
+    history.startSession(audio);
+    history.recordPosition(const Duration(seconds: 10));
+    history.recordSeek(const Duration(minutes: 2));
+    await history.endSession();
+
+    expect(history.events, isEmpty);
+  });
+
+  test('finalizes history in memory before a delayed persistence completes',
+      () async {
+    final delayedStore = _DelayedStore(directory);
+    final delayedHistory = PlaybackHistoryService(
+      store: delayedStore,
+      now: () => now,
+    );
+    final audio = makeAudio('D:/music/delayed-write.flac');
+
+    delayedHistory.startSession(audio);
+    delayedHistory.recordPosition(const Duration(seconds: 30));
+    final completion = delayedHistory.endSession();
+    var completed = false;
+    completion.whenComplete(() => completed = true);
+
+    expect(delayedHistory.events.map((event) => event.path), [audio.path]);
+    await Future<void>.delayed(Duration.zero);
+    expect(delayedStore.writeStarted, isTrue);
+    expect(completed, isFalse);
+
+    delayedStore.allowWrite();
+    await completion;
+  });
+
+  test('nonblocking lifecycle finalization does not wait for persistence',
+      () async {
+    final delayedStore = _DelayedStore(directory);
+    final delayedHistory = PlaybackHistoryService(
+      store: delayedStore,
+      now: () => now,
+    );
+    final audio = makeAudio('D:/music/nonblocking-finalize.flac');
+
+    delayedHistory.startSession(audio);
+    delayedHistory.recordPosition(const Duration(seconds: 30));
+    finalizePlaybackHistorySession(delayedHistory);
+
+    expect(delayedHistory.events.map((event) => event.path), [audio.path]);
+    await Future<void>.delayed(Duration.zero);
+    expect(delayedStore.writeStarted, isTrue);
+    delayedStore.allowWrite();
+  });
+
   test('removes records older than twelve months while loading', () async {
     final store = LocalJsonStore(directory);
     await store.writeAtomically('play_history.json', {
@@ -162,4 +218,19 @@ class _TestRustLibApi implements RustLibApi {
     }
     throw UnimplementedError(invocation.memberName.toString());
   }
+}
+
+class _DelayedStore extends LocalJsonStore {
+  _DelayedStore(super.directory);
+
+  final _writeGate = Completer<void>();
+  var writeStarted = false;
+
+  @override
+  Future<void> writeAtomically(String fileName, Object value) async {
+    writeStarted = true;
+    await _writeGate.future;
+  }
+
+  void allowWrite() => _writeGate.complete();
 }

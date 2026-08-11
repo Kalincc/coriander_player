@@ -7,6 +7,7 @@ import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/library/playlist.dart';
 import 'package:coriander_player/lyric/lyric_source.dart';
+import 'package:coriander_player/play_service/play_service.dart';
 import 'package:coriander_player/src/rust/api/tag_reader.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
@@ -60,6 +61,8 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
       readLyricSources(),
     ]);
     await LyricSearchIndex.instance.refreshCurrentLibrary();
+    await PlayService.instance
+        .initializePlaybackData(AudioLibrary.instance.audioCollection);
     _subscription?.cancel();
     final ctx = context;
     if (ctx.mounted) {

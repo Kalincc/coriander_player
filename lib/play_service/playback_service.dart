@@ -14,6 +14,13 @@ import 'package:flutter/foundation.dart';
 List<Audio> queueSnapshotForShuffleRestore(Iterable<Audio> queue) =>
     List<Audio>.from(queue);
 
+void finalizePlaybackHistorySession(PlaybackHistoryService? historyService) {
+  if (historyService == null) return;
+  unawaited(historyService.endSession().catchError((err, trace) {
+    LOGGER.e('[playback history] $err', stackTrace: trace);
+  }));
+}
+
 enum PlayMode {
   /// 顺序播放到播放列表结尾
   forward,
@@ -43,7 +50,8 @@ class PlaybackService extends ChangeNotifier {
   PlaybackService(this.playService) {
     _playerStateStreamSub = playerStateStream.listen((event) {
       if (event == PlayerState.completed) {
-        unawaited(_endHistorySession().whenComplete(_autoNextAudio));
+        _endHistorySession();
+        _autoNextAudio();
       }
     });
 
@@ -101,14 +109,8 @@ class PlaybackService extends ChangeNotifier {
     _playbackHistoryService = historyService;
   }
 
-  Future<void> _endHistorySession() async {
-    final historyService = _playbackHistoryService;
-    if (historyService == null) return;
-    try {
-      await historyService.endSession();
-    } catch (err, trace) {
-      LOGGER.e('[playback history] $err', stackTrace: trace);
-    }
+  void _endHistorySession() {
+    finalizePlaybackHistorySession(_playbackHistoryService);
   }
 
   void _startHistorySession(Audio audio,
@@ -223,7 +225,7 @@ class PlaybackService extends ChangeNotifier {
     if (audioIndex < 0 || audioIndex >= playlist.length) return;
     final audio = playlist[audioIndex];
     try {
-      await _endHistorySession();
+      _endHistorySession();
       _player.setSource(audio.path);
       _playlistIndex = audioIndex;
       nowPlaying = audio;
@@ -315,6 +317,42 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
+  Future<void> removeFromQueue(int index) async {
+    final queueService = _playbackQueueService;
+    if (queueService == null ||
+        index < 0 ||
+        index >= queueService.items.length) {
+      return;
+    }
+    if (index == queueService.currentIndex) {
+      _stopCurrentQueuePlayback();
+    }
+    await queueService.removeAt(index);
+  }
+
+  Future<void> clearQueue() async {
+    final queueService = _playbackQueueService;
+    if (queueService == null) return;
+    if (queueService.currentIndex >= 0) {
+      _stopCurrentQueuePlayback();
+    }
+    await queueService.clear();
+  }
+
+  void _stopCurrentQueuePlayback() {
+    try {
+      _playbackHistoryService?.recordPosition(
+        Duration(milliseconds: (_player.position * 1000).round()),
+      );
+      _player.pause();
+    } catch (err, trace) {
+      LOGGER.e('[queue playback stop] $err', stackTrace: trace);
+    } finally {
+      _endHistorySession();
+      _smtc.updateState(state: SMTCState.paused);
+    }
+  }
+
   void useShuffle(bool flag) {
     if (nowPlaying == null) return;
     if (flag == shuffle.value) return;
@@ -396,7 +434,7 @@ class PlaybackService extends ChangeNotifier {
       _playbackHistoryService?.recordPosition(
         Duration(milliseconds: (_player.position * 1000).round()),
       );
-      unawaited(_endHistorySession());
+      _endHistorySession();
       _smtc.updateState(state: SMTCState.paused);
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
@@ -456,6 +494,9 @@ class PlaybackService extends ChangeNotifier {
 
   void seek(double position) {
     _player.seek(position);
+    _playbackHistoryService?.recordSeek(
+      Duration(milliseconds: (position * 1000).round()),
+    );
     playService.lyricService.findCurrLyricLine();
   }
 
@@ -464,7 +505,7 @@ class PlaybackService extends ChangeNotifier {
     _playbackHistoryService?.recordPosition(
       Duration(milliseconds: (_player.position * 1000).round()),
     );
-    unawaited(_endHistorySession());
+    _endHistorySession();
     _playerStateStreamSub.cancel();
     _smtcEventStreamSub.cancel();
     _positionStreamSub.cancel();

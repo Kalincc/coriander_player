@@ -65,10 +65,13 @@ void main() {
     await tester.tap(find.byTooltip('Remove from queue').first);
     await tester.pump();
     expect(queue.items, [second]);
+    expect(queue.currentPath, isNull);
 
+    await queue.setCurrent(audio: second, position: Duration.zero);
     await tester.tap(find.byTooltip('Clear queue'));
     await tester.pump();
     expect(queue.items, isEmpty);
+    expect(queue.currentPath, isNull);
     expect(find.text('Queue is empty'), findsOneWidget);
   });
 

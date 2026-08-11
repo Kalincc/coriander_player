@@ -17,6 +17,7 @@ class PlaybackHistoryService extends ChangeNotifier {
   final DateTime Function() _now;
   final List<PlaybackHistoryEvent> _events = [];
   _PlaybackSession? _session;
+  Future<void> _persistChain = Future.value();
 
   List<PlaybackHistoryEvent> get events =>
       UnmodifiableListView<PlaybackHistoryEvent>(_events);
@@ -67,11 +68,19 @@ class PlaybackHistoryService extends ChangeNotifier {
   void recordPosition(Duration position) {
     final session = _session;
     if (session == null) return;
-    final listened = position >= session.initialPosition
-        ? position - session.initialPosition
-        : Duration.zero;
-    if (listened <= session.listened) return;
-    session.listened = listened;
+    if (position < session.positionBaseline) {
+      session.positionBaseline = position;
+      return;
+    }
+
+    session.listened += position - session.positionBaseline;
+    session.positionBaseline = position;
+  }
+
+  void recordSeek(Duration position) {
+    final session = _session;
+    if (session == null) return;
+    session.positionBaseline = position;
   }
 
   Future<void> endSession() async {
@@ -114,23 +123,28 @@ class PlaybackHistoryService extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
-    try {
-      await store.writeAtomically(_historyFileName, {
-        'version': _historyVersion,
-        'events': _events.map((event) => event.toMap()).toList(),
-      });
-    } catch (error) {
+    final snapshot = {
+      'version': _historyVersion,
+      'events': _events.map((event) => event.toMap()).toList(),
+    };
+    final nextWrite = _persistChain
+        .catchError((_) {})
+        .then((_) => store.writeAtomically(_historyFileName, snapshot));
+    _persistChain = nextWrite.catchError((error) {
       debugPrint('[playback history] failed to save: $error');
-    }
+    });
+    await _persistChain;
   }
 }
 
 class _PlaybackSession {
-  _PlaybackSession(this.audio, this.startedAt, this.initialPosition);
+  _PlaybackSession(this.audio, this.startedAt, this.initialPosition)
+      : positionBaseline = initialPosition;
 
   final Audio audio;
   final DateTime startedAt;
   final Duration initialPosition;
+  Duration positionBaseline;
   var listened = Duration.zero;
 }
 
