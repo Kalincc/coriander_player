@@ -43,4 +43,21 @@ void main() {
     expect(coordinator.progress.error, isA<StateError>());
     expect(coordinator.progress.isUpdating, isFalse);
   });
+
+  test('surfaces a legacy-rebuild error without reconciling app data', () async {
+    final calls = <String>[];
+    final coordinator = LibraryUpdateCoordinator(
+      scan: () async => Stream<IndexActionState>.error(
+        StateError('索引缺少扫描根目录，请在文件夹管理中执行完整重建。'),
+      ),
+      reloadLibrary: () async => calls.add('reload'),
+      reconcileAppData: () async => calls.add('reconcile'),
+      refreshLyrics: () async => calls.add('lyrics'),
+    );
+
+    await expectLater(coordinator.update(), throwsStateError);
+
+    expect(calls, isEmpty);
+    expect(coordinator.progress.error, isA<StateError>());
+  });
 }

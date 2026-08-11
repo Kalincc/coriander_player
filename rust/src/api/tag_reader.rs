@@ -933,37 +933,18 @@ fn classify_path_changes(
     changes
 }
 
-fn roots_from_index(index: &serde_json::Value) -> Vec<PathBuf> {
+fn configured_roots_from_index(index: &serde_json::Value) -> anyhow::Result<Vec<PathBuf>> {
     let configured = index["roots"].as_array().into_iter().flatten();
     let roots: Vec<PathBuf> = configured
         .filter_map(|value| value.as_str())
         .map(PathBuf::from)
         .collect();
     if !roots.is_empty() {
-        return roots;
+        return Ok(roots);
     }
-    let folders = if let Some(folders) = index.as_array() {
-        folders
-    } else {
-        index["folders"].as_array().map(Vec::as_slice).unwrap_or(&[])
-    };
-    let legacy_roots: std::collections::BTreeSet<String> = folders
-        .iter()
-        .filter_map(|folder| folder["path"].as_str())
-        .filter_map(|path| {
-            let folder = PathBuf::from(path);
-            let parent = folder
-                .parent()
-                .filter(|parent| parent.parent().is_some())
-                .unwrap_or(&folder);
-            let candidate = parent
-                .parent()
-                .filter(|grandparent| grandparent.parent().is_some())
-                .unwrap_or(parent);
-            normalize_index_path(candidate).ok()
-        })
-        .collect();
-    legacy_roots.into_iter().map(PathBuf::from).collect()
+    Err(anyhow::anyhow!(
+        "index is missing configured scan roots; rebuild the library from folder management"
+    ))
 }
 
 fn existing_audio_records(index: &serde_json::Value) -> HashMap<String, serde_json::Value> {
@@ -1140,7 +1121,7 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
     if !existing_index.is_object() && !existing_index.is_array() {
         return Err(anyhow::anyhow!("invalid index JSON"));
     }
-    let roots = roots_from_index(&existing_index);
+    let roots = configured_roots_from_index(&existing_index)?;
     let updated_index = build_incremental_index(&roots, &existing_index, &sink)?;
     write_index_atomically(&index_path, &updated_index)?;
     Ok(())
@@ -1198,59 +1179,15 @@ mod tests {
     }
 
     #[test]
-    fn migrates_legacy_folders_to_safe_parent_roots() {
-        let root = std::env::temp_dir().join(format!(
-            "coriander-legacy-roots-{}",
-            std::time::SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let artist_a = root.join("ArtistA");
-        let artist_b = root.join("ArtistB");
-        fs::create_dir_all(&artist_a).unwrap();
-        fs::create_dir_all(&artist_b).unwrap();
-        fs::write(artist_a.join("known.mp3"), b"known").unwrap();
-        let new_song = artist_b.join("new.mp3");
-        fs::write(&new_song, b"new").unwrap();
-
+    fn rejects_legacy_indexes_without_configured_roots() {
         let legacy = serde_json::json!({
             "version": 110,
-            "folders": [{"path": artist_a.to_string_lossy(), "audios": []}],
+            "folders": [{"path": "D:/Music/ArtistA/Album1", "audios": []}],
         });
-        let roots = roots_from_index(&legacy);
-        let scanned = scan_audio_paths(&roots).unwrap();
 
-        assert!(scanned.contains_key(&normalize_index_path(&new_song).unwrap()));
-        fs::remove_dir_all(root).unwrap();
-    }
+        let error = configured_roots_from_index(&legacy).unwrap_err();
 
-    #[test]
-    fn migrates_nested_legacy_albums_to_the_library_root() {
-        let root = std::env::temp_dir().join(format!(
-            "coriander-legacy-nested-roots-{}",
-            std::time::SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let artist_a_album = root.join("ArtistA").join("Album1");
-        let artist_b_album = root.join("ArtistB").join("Album1");
-        fs::create_dir_all(&artist_a_album).unwrap();
-        fs::create_dir_all(&artist_b_album).unwrap();
-        fs::write(artist_a_album.join("known.mp3"), b"known").unwrap();
-        let new_song = artist_b_album.join("new.mp3");
-        fs::write(&new_song, b"new").unwrap();
-
-        let legacy = serde_json::json!({
-            "version": 110,
-            "folders": [{"path": artist_a_album.to_string_lossy(), "audios": []}],
-        });
-        let roots = roots_from_index(&legacy);
-        let scanned = scan_audio_paths(&roots).unwrap();
-
-        assert!(scanned.contains_key(&normalize_index_path(&new_song).unwrap()));
-        fs::remove_dir_all(root).unwrap();
+        assert!(error.to_string().contains("rebuild the library"));
     }
 
     #[test]
