@@ -874,34 +874,38 @@ fn scan_directory_recursively(
     visited: &mut HashSet<String>,
     scanned: &mut BTreeMap<String, PathBuf>,
 ) -> io::Result<()> {
-    let normalized = match normalize_index_path(directory) {
-        Ok(path) => path,
-        Err(error) => {
-            log_to_dart(format!("{:?}: {}", directory, error));
-            return Ok(());
-        }
-    };
+    let normalized = normalize_index_path(directory).map_err(|error| {
+        log_to_dart(format!("{:?}: {}", directory, error));
+        error
+    })?;
     if !visited.insert(normalized) {
         return Ok(());
     }
 
-    let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(error) => {
-            log_to_dart(format!("{:?}: {}", directory, error));
-            return Ok(());
-        }
-    };
-    for entry in entries.flatten() {
+    let entries = fs::read_dir(directory).map_err(|error| {
+        log_to_dart(format!("{:?}: {}", directory, error));
+        error
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            log_to_dart(error.to_string());
+            error
+        })?;
         let path = entry.path();
-        match entry.file_type() {
-            Ok(file_type) if file_type.is_dir() => {
+        let file_type = entry.file_type().map_err(|error| {
+            log_to_dart(error.to_string());
+            error
+        })?;
+        match file_type {
+            file_type if file_type.is_dir() => {
                 scan_directory_recursively(&path, visited, scanned)?;
             }
-            Ok(file_type) if file_type.is_file() && is_supported_audio_path(&path) => {
-                if let Ok(normalized) = normalize_index_path(&path) {
-                    scanned.insert(normalized, path);
-                }
+            file_type if file_type.is_file() && is_supported_audio_path(&path) => {
+                let normalized = normalize_index_path(&path).map_err(|error| {
+                    log_to_dart(format!("{:?}: {}", path, error));
+                    error
+                })?;
+                scanned.insert(normalized, path);
             }
             _ => {}
         }
@@ -1188,6 +1192,19 @@ mod tests {
         let error = configured_roots_from_index(&legacy).unwrap_err();
 
         assert!(error.to_string().contains("rebuild the library"));
+    }
+
+    #[test]
+    fn rejects_an_unreadable_configured_scan_root() {
+        let missing = std::env::temp_dir().join(format!(
+            "coriander-missing-root-{}",
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        assert!(scan_audio_paths(&[missing]).is_err());
     }
 
     #[test]

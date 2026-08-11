@@ -207,7 +207,7 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
                                   );
                                   await coordinator.update();
                                   if (context.mounted) {
-                                    Navigator.pop(context);
+                                    Navigator.pop(context, true);
                                   }
                                 },
                               ),

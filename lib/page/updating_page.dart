@@ -10,6 +10,7 @@ import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/library/playlist.dart';
 import 'package:coriander_player/lyric/lyric_source.dart';
 import 'package:coriander_player/play_service/play_service.dart';
+import 'package:coriander_player/page/settings_page/other_settings.dart';
 import 'package:coriander_player/src/rust/api/tag_reader.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
@@ -40,9 +41,19 @@ class UpdatingPage extends StatelessWidget {
 }
 
 class UpdatingStateView extends StatefulWidget {
-  const UpdatingStateView({super.key, required this.indexPath});
+  const UpdatingStateView({
+    super.key,
+    required this.indexPath,
+    this.coordinatorFactory,
+    this.showRebuildDialog,
+    this.onUpdated,
+  });
 
   final Directory indexPath;
+  final LibraryUpdateCoordinator Function(Directory indexPath)?
+      coordinatorFactory;
+  final Future<bool?> Function(BuildContext context)? showRebuildDialog;
+  final VoidCallback? onUpdated;
 
   @override
   State<UpdatingStateView> createState() => _UpdatingStateViewState();
@@ -54,7 +65,8 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
   @override
   void initState() {
     super.initState();
-    _coordinator = _createCoordinator(widget.indexPath);
+    _coordinator = widget.coordinatorFactory?.call(widget.indexPath) ??
+        _createCoordinator(widget.indexPath);
     _coordinator.addListener(_onProgressChanged);
     unawaited(_updateAndContinue());
   }
@@ -75,6 +87,11 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
   Future<void> _updateAndContinue() async {
     try {
       await _coordinator.update();
+      final onUpdated = widget.onUpdated;
+      if (onUpdated != null) {
+        onUpdated();
+        return;
+      }
       if (mounted) {
         context.go(app_paths.START_PAGES[AppPreference.instance.startPage]);
       }
@@ -85,6 +102,18 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
 
   void _onProgressChanged() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _rebuildLibraryAndRetry() async {
+    final rebuilt = await (widget.showRebuildDialog?.call(context) ??
+        showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AudioLibraryEditorDialog(),
+        ));
+    if (rebuilt == true && mounted) {
+      await _updateAndContinue();
+    }
   }
 
   @override
@@ -116,8 +145,20 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
                 color: error == null ? scheme.onSurface : scheme.error),
             textAlign: TextAlign.center,
           ),
+          if (_requiresLibraryRebuild(error)) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const Key('rebuild-library-button'),
+              onPressed: _rebuildLibraryAndRetry,
+              icon: const Icon(Icons.folder_open),
+              label: const Text('打开文件夹管理并完整重建'),
+            ),
+          ],
         ],
       ),
     );
   }
 }
+
+bool _requiresLibraryRebuild(Object? error) =>
+    error.toString().contains('index is missing configured scan roots');
