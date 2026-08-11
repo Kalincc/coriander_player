@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/local_json_store.dart';
 import 'package:coriander_player/play_service/playback_queue_service.dart';
+import 'package:coriander_player/play_service/playback_service.dart';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
 import 'package:coriander_player/src/rust/frb_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -118,6 +119,23 @@ void main() {
 
     await queue.clear();
     expect(queue.items, isEmpty);
+  });
+
+  test('retains an inserted next song when leaving shuffle mode', () async {
+    final first = makeAudio('D:/music/first.flac');
+    final next = makeAudio('D:/music/next.flac');
+    final last = makeAudio('D:/music/last.flac');
+    final queue = PlaybackQueueService(store: store);
+
+    await queue.setQueue([first, last], currentPath: first.path);
+    await queue.insertNext(next);
+
+    final playlistBackup = queueSnapshotForShuffleRestore(queue.items);
+    final shuffled = List<Audio>.from(queue.items.reversed);
+    expect(shuffled, [last, next, first]);
+
+    final restored = queueSnapshotForShuffleRestore(playlistBackup);
+    expect(restored, [first, next, last]);
   });
 }
 

@@ -10,6 +10,9 @@ import 'package:coriander_player/theme_provider.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/foundation.dart';
 
+List<Audio> queueSnapshotForShuffleRestore(Iterable<Audio> queue) =>
+    List<Audio>.from(queue);
+
 enum PlayMode {
   /// 顺序播放到播放列表结尾
   forward,
@@ -258,7 +261,9 @@ class PlaybackService extends ChangeNotifier {
   void addToNext(Audio audio) {
     final queueService = _playbackQueueService;
     if (queueService != null) {
-      _persistQueue(queueService.insertNext(audio));
+      final insertion = queueService.insertNext(audio);
+      _playlistBackup = queueSnapshotForShuffleRestore(queueService.items);
+      _persistQueue(insertion);
       return;
     }
 

@@ -53,3 +53,18 @@ dependency resolution printed routine newer-package notices only.
   queue paths are reconciled with the actual library; it does not start audio.
 - Queue persistence failures are logged and do not prevent the existing
   playback UI from continuing to operate.
+
+## Fix round 1 — shuffle backup after insert-next
+
+Review identified that the queue-backed `PlaybackService.addToNext` path
+updated only `PlaybackQueueService`; `_playlistBackup` remained stale and
+could remove the newly inserted song when shuffle was later disabled.
+
+- RED: the new shuffle-restoration regression failed because the playback
+  queue snapshot handoff did not exist.
+- GREEN: `addToNext` now snapshots the queue immediately after its synchronous
+  in-memory `insertNext` mutation, before the asynchronous persistence work
+  finishes. The snapshot remains the source used when shuffle is disabled.
+- Verification: `flutter test test/play_service/playback_queue_service_test.dart`
+  passed 4 tests; the queue plus lyric regression command passed 9 tests;
+  formatting and `git diff --check` passed.
