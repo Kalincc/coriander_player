@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:coriander_player/library/local_json_store.dart';
@@ -30,10 +31,16 @@ void main() {
 
   test('reads the backup when the primary JSON is missing', () async {
     final store = LocalJsonStore(directory);
-    await File('${directory.path}${Platform.pathSeparator}saved.json.bak')
+    final primary =
+        File('${directory.path}${Platform.pathSeparator}saved.json');
+    await File('${primary.path}.bak')
         .writeAsString('{"version": 1, "items": ["backup"]}');
 
     expect(await store.read('saved.json'), {
+      'version': 1,
+      'items': ['backup'],
+    });
+    expect(jsonDecode(await primary.readAsString()), {
       'version': 1,
       'items': ['backup'],
     });
@@ -41,12 +48,49 @@ void main() {
 
   test('reads the backup when the primary JSON is corrupt', () async {
     final store = LocalJsonStore(directory);
-    await File('${directory.path}${Platform.pathSeparator}saved.json')
-        .writeAsString('{not valid JSON');
-    await File('${directory.path}${Platform.pathSeparator}saved.json.bak')
+    final primary =
+        File('${directory.path}${Platform.pathSeparator}saved.json');
+    await primary.writeAsString('{not valid JSON');
+    await File('${primary.path}.bak')
         .writeAsString('{"version": 1, "items": ["backup"]}');
 
     expect(await store.read('saved.json'), {
+      'version': 1,
+      'items': ['backup'],
+    });
+    expect(jsonDecode(await primary.readAsString()), {
+      'version': 1,
+      'items': ['backup'],
+    });
+  });
+
+  test('keeps recovered data in the backup after a later write failure',
+      () async {
+    final primary =
+        File('${directory.path}${Platform.pathSeparator}saved.json');
+    final backup = File('${primary.path}.bak');
+    await backup.writeAsString('{"version": 1, "items": ["backup"]}');
+    await LocalJsonStore(directory).read('saved.json');
+    final failingStore = LocalJsonStore(
+      directory,
+      moveFile: (source, destination) async {
+        if (source.path.endsWith('.tmp')) {
+          throw const FileSystemException('simulated replace failure');
+        }
+        await source.rename(destination.path);
+      },
+    );
+
+    await expectLater(
+      failingStore.writeAtomically('saved.json', {'version': 2}),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    expect(jsonDecode(await primary.readAsString()), {
+      'version': 1,
+      'items': ['backup'],
+    });
+    expect(jsonDecode(await backup.readAsString()), {
       'version': 1,
       'items': ['backup'],
     });

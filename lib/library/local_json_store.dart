@@ -16,7 +16,7 @@ class LocalJsonStore {
 
     if (!await primary.exists()) {
       if (await backup.exists()) {
-        return _decode(backup);
+        return _readBackupAndRestorePrimary(primary, backup);
       }
       return null;
     }
@@ -25,7 +25,7 @@ class LocalJsonStore {
       return await _decode(primary);
     } on FormatException {
       if (await backup.exists()) {
-        return _decode(backup);
+        return _readBackupAndRestorePrimary(primary, backup);
       }
       rethrow;
     }
@@ -66,6 +66,31 @@ class LocalJsonStore {
 
   Future<Object?> _decode(File file) async =>
       json.decode(await file.readAsString());
+
+  Future<Object?> _readBackupAndRestorePrimary(
+    File primary,
+    File backup,
+  ) async {
+    final value = await _decode(backup);
+    final recovery = File('${primary.path}.recovery.tmp');
+    if (await recovery.exists()) {
+      await recovery.delete();
+    }
+
+    try {
+      await backup.copy(recovery.path);
+      if (await primary.exists()) {
+        await primary.delete();
+      }
+      await _moveFile(recovery, primary);
+    } catch (_) {
+      if (await recovery.exists()) {
+        await recovery.delete();
+      }
+      rethrow;
+    }
+    return value;
+  }
 
   static Future<void> _renameFile(File source, File destination) async {
     await source.rename(destination.path);
