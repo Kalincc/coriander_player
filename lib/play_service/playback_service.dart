@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/play_service/play_service.dart';
+import 'package:coriander_player/play_service/playback_queue_service.dart';
 import 'package:coriander_player/src/bass/bass_player.dart';
 import 'package:coriander_player/src/rust/api/smtc_flutter.dart';
 import 'package:coriander_player/theme_provider.dart';
@@ -80,11 +81,68 @@ class PlaybackService extends ChangeNotifier {
 
   Audio? nowPlaying;
 
+  PlaybackQueueService? _playbackQueueService;
+  PlaybackQueueService? get playbackQueueService => _playbackQueueService;
+
   int? _playlistIndex;
   int get playlistIndex => _playlistIndex ?? 0;
 
   final ValueNotifier<List<Audio>> playlist = ValueNotifier([]);
   List<Audio> _playlistBackup = [];
+
+  void attachQueue(PlaybackQueueService queueService) {
+    if (identical(_playbackQueueService, queueService)) return;
+    _playbackQueueService?.removeListener(_syncPlaylistFromQueue);
+    _playbackQueueService = queueService;
+    queueService.addListener(_syncPlaylistFromQueue);
+    _syncPlaylistFromQueue();
+  }
+
+  void _syncPlaylistFromQueue() {
+    final queueService = _playbackQueueService;
+    if (queueService == null) return;
+
+    playlist.value = List.of(queueService.items);
+    final index = queueService.currentIndex;
+    _playlistIndex = index < 0 ? null : index;
+    nowPlaying = index < 0 ? null : queueService.items[index];
+    notifyListeners();
+  }
+
+  void _persistQueue(Future<void>? operation) {
+    if (operation == null) return;
+    unawaited(operation.catchError((err, trace) {
+      LOGGER.e('[playback queue] $err', stackTrace: trace);
+    }));
+  }
+
+  void _setQueue(
+    Iterable<Audio> audios, {
+    Audio? current,
+    Duration position = Duration.zero,
+  }) {
+    final queueService = _playbackQueueService;
+    if (queueService == null) {
+      playlist.value = List.of(audios);
+      _playlistIndex = current == null ? null : playlist.value.indexOf(current);
+      return;
+    }
+    _persistQueue(queueService.setQueue(
+      audios,
+      currentPath: current?.path,
+      position: position,
+    ));
+  }
+
+  void _saveQueuePosition() {
+    final queueService = _playbackQueueService;
+    final nowPlaying = this.nowPlaying;
+    if (queueService == null || nowPlaying == null) return;
+    _persistQueue(queueService.setCurrent(
+      audio: nowPlaying,
+      position: Duration(milliseconds: (_player.position * 1000).round()),
+    ));
+  }
 
   late final _playMode = ValueNotifier(_pref.playMode);
   ValueNotifier<PlayMode> get playMode => _playMode;
@@ -126,6 +184,10 @@ class PlaybackService extends ChangeNotifier {
     try {
       _playlistIndex = audioIndex;
       nowPlaying = playlist[audioIndex];
+      _persistQueue(_playbackQueueService?.setCurrent(
+        audio: nowPlaying,
+        position: Duration.zero,
+      ));
       _player.setSource(nowPlaying!.path);
       setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
 
@@ -165,34 +227,46 @@ class PlaybackService extends ChangeNotifier {
   /// 播放playlist[audioIndex]并设置播放列表为playlist
   void play(int audioIndex, List<Audio> playlist) {
     if (shuffle.value) {
-      this.playlist.value = List.from(playlist);
-      final willPlay = this.playlist.value.removeAt(audioIndex);
-      this.playlist.value.shuffle();
-      this.playlist.value.insert(0, willPlay);
+      final shuffled = List<Audio>.from(playlist);
+      final willPlay = shuffled.removeAt(audioIndex);
+      shuffled.shuffle();
+      shuffled.insert(0, willPlay);
       _playlistBackup = List.from(playlist);
-      _loadAndPlay(0, this.playlist.value);
+      _setQueue(shuffled, current: willPlay);
+      _loadAndPlay(0, shuffled);
     } else {
-      _loadAndPlay(audioIndex, playlist);
-      this.playlist.value = List.from(playlist);
+      final queue = List<Audio>.from(playlist);
+      final willPlay = queue[audioIndex];
       _playlistBackup = List.from(playlist);
+      _setQueue(queue, current: willPlay);
+      _loadAndPlay(audioIndex, queue);
     }
   }
 
   void shuffleAndPlay(List<Audio> audios) {
-    playlist.value = List.from(audios);
-    playlist.value.shuffle();
+    final shuffled = List<Audio>.from(audios)..shuffle();
     _playlistBackup = List.from(audios);
 
     shuffle.value = true;
 
-    _loadAndPlay(0, playlist.value);
+    if (shuffled.isEmpty) return;
+    _setQueue(shuffled, current: shuffled.first);
+    _loadAndPlay(0, shuffled);
   }
 
   /// 下一首播放
   void addToNext(Audio audio) {
-    if (_playlistIndex != null) {
-      playlist.value.insert(_playlistIndex! + 1, audio);
-      _playlistBackup = List.from(playlist.value);
+    final queueService = _playbackQueueService;
+    if (queueService != null) {
+      _persistQueue(queueService.insertNext(audio));
+      return;
+    }
+
+    if (_playlistIndex != null && !playlist.value.contains(audio)) {
+      final queue = List<Audio>.from(playlist.value)
+        ..insert(_playlistIndex! + 1, audio);
+      playlist.value = queue;
+      _playlistBackup = List.from(queue);
     }
   }
 
@@ -201,14 +275,16 @@ class PlaybackService extends ChangeNotifier {
     if (flag == shuffle.value) return;
 
     if (flag) {
-      playlist.value.shuffle();
-      playlist.value.remove(nowPlaying!);
-      playlist.value.insert(0, nowPlaying!);
+      final shuffled = List<Audio>.from(playlist.value)..shuffle();
+      shuffled.remove(nowPlaying!);
+      shuffled.insert(0, nowPlaying!);
+      _setQueue(shuffled, current: nowPlaying!);
       _playlistIndex = 0;
       shuffle.value = true;
     } else {
-      playlist.value = List.from(_playlistBackup);
-      _playlistIndex = playlist.value.indexOf(nowPlaying!);
+      final original = List<Audio>.from(_playlistBackup);
+      _setQueue(original, current: nowPlaying!);
+      _playlistIndex = original.indexOf(nowPlaying!);
       shuffle.value = false;
     }
   }
@@ -271,6 +347,7 @@ class PlaybackService extends ChangeNotifier {
   void pause() {
     try {
       _player.pause();
+      _saveQueuePosition();
       _smtc.updateState(state: SMTCState.paused);
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
@@ -286,6 +363,16 @@ class PlaybackService extends ChangeNotifier {
   /// 恢复播放
   void start() {
     try {
+      if (_player.playerState == PlayerState.unknown &&
+          nowPlaying != null &&
+          _playlistIndex != null) {
+        final position = _playbackQueueService?.savedPosition ?? Duration.zero;
+        _loadAndPlay(_playlistIndex!, playlist.value);
+        if (position > Duration.zero) {
+          _player.seek(position.inMilliseconds / 1000);
+        }
+        return;
+      }
       _player.start();
       _smtc.updateState(state: SMTCState.playing);
       playService.desktopLyricService.canSendMessage.then((canSend) {
@@ -309,8 +396,10 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void close() {
+    _saveQueuePosition();
     _playerStateStreamSub.cancel();
     _smtcEventStreamSub.cancel();
+    _playbackQueueService?.removeListener(_syncPlaylistFromQueue);
     _player.free();
     _smtc.close();
   }
