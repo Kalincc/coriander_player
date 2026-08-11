@@ -24,6 +24,11 @@ class ReportPeriod {
         start: start, end: _calendarDate(now, now.year, now.month + 1, 1));
   }
 
+  factory ReportPeriod.recentTwelveMonths(DateTime now) => ReportPeriod(
+        start: _calendarDate(now, now.year - 1, now.month, now.day),
+        end: now.add(const Duration(microseconds: 1)),
+      );
+
   factory ReportPeriod.range(DateTime start, DateTime end) =>
       ReportPeriod(start: start, end: end);
 

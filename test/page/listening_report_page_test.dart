@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:coriander_player/app_paths.dart' as app_paths;
+import 'package:coriander_player/component/side_nav.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/local_json_store.dart';
 import 'package:coriander_player/page/listening_report_page.dart';
@@ -89,6 +91,110 @@ void main() {
     );
 
     expect(find.text('D:/music/missing.flac'), findsOneWidget);
+    expect(
+      tester
+          .widget<ListTile>(
+            find.widgetWithText(ListTile, 'D:/music/missing.flac'),
+          )
+          .onTap,
+      isNull,
+    );
+  });
+
+  testWidgets('shows no data for this week then rebuilds for this month',
+      (tester) async {
+    final now = DateTime(2026, 8, 5, 14);
+    final audio = _audio(path: 'D:/music/month.flac', title: 'Month-only song');
+    final history = await _historyWithQualifiedPlay(
+      directory,
+      audio,
+      DateTime(2026, 8, 1, 14),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListeningReportPage(
+          historyService: history,
+          audios: [audio],
+          now: () => now,
+        ),
+      ),
+    );
+
+    expect(find.text('这个周期还没有有效播放记录'), findsOneWidget);
+    expect(find.text('Month-only song'), findsNothing);
+
+    await tester.tap(find.text('本月'));
+    await tester.pump();
+
+    expect(find.text('这个周期还没有有效播放记录'), findsNothing);
+    expect(find.text('Month-only song'), findsOneWidget);
+    expect(find.text('1 次'), findsOneWidget);
+  });
+
+  testWidgets('renders only ten song ranks when more songs are available',
+      (tester) async {
+    final now = DateTime(2026, 8, 5, 14);
+    final audios = List.generate(
+      11,
+      (index) => _audio(
+        path: 'D:/music/$index.flac',
+        title: 'Song $index',
+      ),
+    );
+    final history = await _historyWithQualifiedPlays(
+      directory,
+      [
+        for (final audio in audios.take(10)) ...[audio, audio],
+        audios.last,
+      ],
+      now,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListeningReportPage(
+          historyService: history,
+          audios: audios,
+          now: () => now,
+        ),
+      ),
+    );
+
+    for (var index = 0; index < 10; index++) {
+      expect(find.text('Song $index'), findsOneWidget);
+    }
+    expect(find.text('Song 10'), findsNothing);
+  });
+
+  testWidgets('uses injected metadata for artist and album detail targets',
+      (tester) async {
+    final now = DateTime(2026, 8, 5, 14);
+    final audio = _audio(path: 'D:/music/detail.flac', title: 'Detail song');
+    final history = await _historyWithQualifiedPlay(directory, audio, now);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListeningReportPage(
+          historyService: history,
+          audios: [audio],
+          now: () => now,
+        ),
+      ),
+    );
+
+    expect(
+      tester
+          .widget<ListTile>(find.widgetWithText(ListTile, 'Test artist'))
+          .onTap,
+      isNotNull,
+    );
+    expect(
+      tester
+          .widget<ListTile>(find.widgetWithText(ListTile, 'Test album'))
+          .onTap,
+      isNotNull,
+    );
   });
 
   testWidgets('shows an unavailable state before playback history is loaded',
@@ -99,6 +205,16 @@ void main() {
 
     expect(find.text('听歌报告暂不可用'), findsOneWidget);
   });
+
+  test('keeps the report in navigation but out of startup choices', () {
+    final destination = destinations.singleWhere(
+      (item) => item.desPath == app_paths.LISTENING_REPORT_PAGE,
+    );
+
+    expect(destination.label, '听歌报告');
+    expect(destination.desPath, '/reports');
+    expect(app_paths.START_PAGES, isNot(contains('/reports')));
+  });
 }
 
 Future<PlaybackHistoryService> _historyWithQualifiedPlay(
@@ -106,13 +222,23 @@ Future<PlaybackHistoryService> _historyWithQualifiedPlay(
   Audio audio,
   DateTime now,
 ) async {
+  return _historyWithQualifiedPlays(directory, [audio], now);
+}
+
+Future<PlaybackHistoryService> _historyWithQualifiedPlays(
+  Directory directory,
+  Iterable<Audio> audios,
+  DateTime now,
+) async {
   final history = PlaybackHistoryService(
     store: LocalJsonStore(directory),
     now: () => now,
   );
-  history.startSession(audio, startedAt: now);
-  history.recordPosition(const Duration(seconds: 30));
-  await history.endSession();
+  for (final audio in audios) {
+    history.startSession(audio, startedAt: now);
+    history.recordPosition(const Duration(seconds: 30));
+    await history.endSession();
+  }
   return history;
 }
 

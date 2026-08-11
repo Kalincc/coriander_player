@@ -76,8 +76,8 @@ class _ReportContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final audioByPath = {for (final audio in audios) audio.path: audio};
-    final report = buildListeningReport(events, period, audioByPath);
+    final metadata = _ReportMetadata.fromAudios(audios);
+    final report = buildListeningReport(events, period, metadata.audiosByPath);
     if (report.qualifiedPlayCount == 0) {
       return PageScaffold(
         title: '听歌报告',
@@ -108,7 +108,7 @@ class _ReportContent extends StatelessWidget {
             ranks: report.songRanks,
             total: report.totalListened,
             destinationFor: (rank) {
-              final audio = audioByPath[rank.key];
+              final audio = metadata.audiosByPath[rank.key];
               return audio == null
                   ? null
                   : _ReportDestination(app_paths.AUDIO_DETAIL_PAGE, audio);
@@ -120,7 +120,7 @@ class _ReportContent extends StatelessWidget {
             ranks: report.artistRanks,
             total: report.totalListened,
             destinationFor: (rank) {
-              final artist = AudioLibrary.instance.artistForName(rank.key);
+              final artist = metadata.artistsByName[rank.key];
               return artist == null
                   ? null
                   : _ReportDestination(app_paths.ARTIST_DETAIL_PAGE, artist);
@@ -132,7 +132,7 @@ class _ReportContent extends StatelessWidget {
             ranks: report.albumRanks,
             total: report.totalListened,
             destinationFor: (rank) {
-              final album = AudioLibrary.instance.albumCollection[rank.key];
+              final album = metadata.albumsByName[rank.key];
               return album == null
                   ? null
                   : _ReportDestination(app_paths.ALBUM_DETAIL_PAGE, album);
@@ -275,6 +275,48 @@ class _ReportDestination {
   final Object extra;
 }
 
+class _ReportMetadata {
+  _ReportMetadata._(
+    this.audiosByPath,
+    this.artistsByName,
+    this.albumsByName,
+  );
+
+  final Map<String, Audio> audiosByPath;
+  final Map<String, Artist> artistsByName;
+  final Map<String, Album> albumsByName;
+
+  factory _ReportMetadata.fromAudios(Iterable<Audio> audios) {
+    final audiosByPath = <String, Audio>{};
+    final artistsByName = <String, Artist>{};
+    final albumsByName = <String, Album>{};
+
+    for (final audio in audios) {
+      audiosByPath[audio.path] = audio;
+      final artist = audio.artist.trim().isEmpty
+          ? null
+          : artistsByName.putIfAbsent(
+              audio.artist,
+              () => Artist(name: audio.artist),
+            );
+      final album = audio.album.trim().isEmpty
+          ? null
+          : albumsByName.putIfAbsent(
+              audio.album,
+              () => Album(name: audio.album),
+            );
+      artist?.works.add(audio);
+      album?.works.add(audio);
+      if (artist != null && album != null) {
+        artist.albumsMap[album.name] = album;
+        album.artistsMap[artist.name] = artist;
+      }
+    }
+
+    return _ReportMetadata._(audiosByPath, artistsByName, albumsByName);
+  }
+}
+
 enum _ReportRange {
   week('本周'),
   month('本月'),
@@ -288,10 +330,7 @@ enum _ReportRange {
 ReportPeriod _periodFor(_ReportRange range, DateTime now) => switch (range) {
       _ReportRange.week => ReportPeriod.currentWeek(now),
       _ReportRange.month => ReportPeriod.currentMonth(now),
-      _ReportRange.year => ReportPeriod.range(
-          DateTime(now.year - 1, now.month, now.day),
-          now.add(const Duration(microseconds: 1)),
-        ),
+      _ReportRange.year => ReportPeriod.recentTwelveMonths(now),
     };
 
 String _formatDuration(Duration duration) {

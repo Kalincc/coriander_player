@@ -60,6 +60,15 @@ void main() {
         DateTime(2027, 1));
   });
 
+  test('keeps UTC clock basis for the recent twelve month boundary', () {
+    final now = DateTime.utc(2026, 8, 5, 14, 30);
+
+    final period = ReportPeriod.recentTwelveMonths(now);
+
+    expect(period.start, DateTime.utc(2025, 8, 5));
+    expect(period.end, DateTime.utc(2026, 8, 5, 14, 30, 0, 1));
+  });
+
   test('aggregates the top ten ranks by plays then duration then name', () {
     final metadata = <String, Audio>{};
     final events = <PlaybackHistoryEvent>[];
