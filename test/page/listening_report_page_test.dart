@@ -10,6 +10,7 @@ import 'package:coriander_player/src/rust/api/system_theme.dart';
 import 'package:coriander_player/src/rust/frb_generated.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 void main() {
   late Directory directory;
@@ -57,6 +58,41 @@ void main() {
       expect(find.text('歌手 Top 10'), findsOneWidget);
       expect(find.text('专辑 Top 10'), findsOneWidget);
       expect(find.text('Weekly song'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('total-duration')),
+          matching: find.text('30秒'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('qualified')),
+          matching: find.text('1 次'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('song-count')),
+          matching: find.text('1 首'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('artist-count')),
+          matching: find.text('1 位'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('album-count')),
+          matching: find.text('1 张'),
+        ),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('本月'));
       await tester.pump();
@@ -195,6 +231,39 @@ void main() {
           .onTap,
       isNotNull,
     );
+  });
+
+  testWidgets('tapping a song rank navigates only to its detail route',
+      (tester) async {
+    final now = DateTime(2026, 8, 5, 14);
+    final audio = _audio(path: 'D:/music/navigation.flac', title: 'Navigate');
+    final history = await _historyWithQualifiedPlay(directory, audio, now);
+    final router = GoRouter(
+      initialLocation: app_paths.LISTENING_REPORT_PAGE,
+      routes: [
+        GoRoute(
+          path: app_paths.LISTENING_REPORT_PAGE,
+          builder: (context, state) => ListeningReportPage(
+            historyService: history,
+            audios: [audio],
+            now: () => now,
+          ),
+        ),
+        GoRoute(
+          path: app_paths.AUDIO_DETAIL_PAGE,
+          builder: (context, state) => const Scaffold(
+            body: Text('audio detail route'),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.tap(find.widgetWithText(ListTile, 'Navigate'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('audio detail route'), findsOneWidget);
   });
 
   testWidgets('shows an unavailable state before playback history is loaded',

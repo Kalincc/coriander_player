@@ -175,18 +175,42 @@ class _SummaryCards extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cards = [
-      _SummaryCard('总听歌时长', _formatDuration(report.totalListened)),
-      _SummaryCard('有效播放', '${report.qualifiedPlayCount} 次'),
-      _SummaryCard('歌曲', '${report.songCount} 首'),
-      _SummaryCard('歌手', '${report.artistCount} 位'),
-      _SummaryCard('专辑', '${report.albumCount} 张'),
+      _SummaryCard(
+        key: const ValueKey('total-duration'),
+        label: '总听歌时长',
+        value: _formatDuration(report.totalListened),
+      ),
+      _SummaryCard(
+        key: const ValueKey('qualified'),
+        label: '有效播放',
+        value: '${report.qualifiedPlayCount} 次',
+      ),
+      _SummaryCard(
+        key: const ValueKey('song-count'),
+        label: '歌曲',
+        value: '${report.songCount} 首',
+      ),
+      _SummaryCard(
+        key: const ValueKey('artist-count'),
+        label: '歌手',
+        value: '${report.artistCount} 位',
+      ),
+      _SummaryCard(
+        key: const ValueKey('album-count'),
+        label: '专辑',
+        value: '${report.albumCount} 张',
+      ),
     ];
     return Wrap(spacing: 12, runSpacing: 12, children: cards);
   }
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard(this.label, this.value);
+  const _SummaryCard({
+    super.key,
+    required this.label,
+    required this.value,
+  });
 
   final String label;
   final String value;
