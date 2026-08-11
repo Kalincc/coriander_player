@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_lyric_from_lrc_file`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_update_index_below_1_1_0`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `to_json_value`, `to_json_value`
+// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_lyric_from_lrc_file`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `to_json_value`, `to_json_value`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`, `fmt`
 
@@ -31,10 +31,8 @@ Stream<IndexActionState> buildIndexFromFoldersRecursively(
         folders: folders, indexPath: indexPath);
 
 /// for Flutter
-/// 读取 index_path/index.json，递归扫描已配置目录。
-///
-/// 文件以规范化绝对路径匹配。新增、删除、修改时间或大小变化的文件会更新索引；
-/// 未变化文件保留既有标签。写入通过临时文件替换，以便扫描失败时保留原索引。
+/// 仅为旧版生成绑定保留的 ABI 兼容入口；当前 Dart 代码不调用。
+/// 若由旧客户端调用，会读取索引中明确保存的 roots 并执行完整递归重建。
 Stream<IndexActionState> updateIndex({required String indexPath}) =>
     RustLib.instance.api.crateApiTagReaderUpdateIndex(indexPath: indexPath);
 

@@ -301,6 +301,44 @@ void main() {
     expect(notifications, 1);
   });
 
+  test('load never fingerprints songs until current-library sync is explicit',
+      () async {
+    final directory =
+        await Directory.systemTemp.createTemp('coriander_lyric_load_only_');
+    addTearDown(() => directory.delete(recursive: true));
+    final indexFile =
+        File('${directory.path}${Platform.pathSeparator}index.json');
+    await indexFile.writeAsString(jsonEncode({
+      'version': 110,
+      'roots': ['D:/Music'],
+      'folders': [
+        {
+          'path': 'D:/Music',
+          'modified': 1,
+          'latest': 1,
+          'audios': [makeAudio('D:/Music/song.flac', 1).toMap()],
+        },
+      ],
+    }));
+    await AudioLibrary.initFromIndex(indexFile: indexFile);
+    var fingerprintReads = 0;
+    final index = LyricSearchIndex(
+      readIndex: () async => null,
+      writeIndex: (_) async {},
+      fingerprintFor: (audio) async {
+        fingerprintReads++;
+        return LyricFileFingerprint(audioModified: audio.modified);
+      },
+      lyricLinesFor: (_) async => const [],
+    );
+
+    await index.load();
+    expect(fingerprintReads, 0);
+
+    await index.syncCurrentLibrary();
+    expect(fingerprintReads, 1);
+  });
+
   test('concurrent load calls share the first in-flight load', () async {
     var reads = 0;
     final readCompleter = Completer<String?>();

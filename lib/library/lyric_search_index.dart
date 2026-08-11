@@ -209,9 +209,9 @@ class LyricSearchIndex extends ChangeNotifier {
     return _runSyncAfter(previousSync, releaseNextSync, audioList);
   }
 
-  Future<void> refreshCurrentLibrary() async {
+  Future<void> syncCurrentLibrary() async {
     await load();
-    unawaited(sync(AudioLibrary.instance.audioCollection));
+    await sync(AudioLibrary.instance.audioCollection);
   }
 
   Future<void> _runSyncAfter(

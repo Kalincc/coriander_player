@@ -96,7 +96,7 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                         readPlaylists(),
                         readLyricSources(),
                       ]);
-                      await LyricSearchIndex.instance.refreshCurrentLibrary();
+                      await LyricSearchIndex.instance.syncCurrentLibrary();
                       await PlayService.instance.initializePlaybackData(
                         AudioLibrary.instance.audioCollection,
                       );

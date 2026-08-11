@@ -4,17 +4,19 @@ import 'dart:ui';
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/artist_name_normalizer.dart';
 import 'package:coriander_player/src/rust/api/tag_reader.dart';
-import 'package:coriander_player/utils.dart';
 import 'package:flutter/painting.dart';
 
 /// from index.json
 class AudioLibrary {
   List<AudioFolder> folders;
+  final List<String> scanRoots;
 
-  AudioLibrary._(this.folders);
+  AudioLibrary._(this.folders, {Iterable<String> scanRoots = const []})
+      : scanRoots = List.unmodifiable(scanRoots);
 
   AudioLibrary.forTesting(Iterable<Audio> audios)
-      : folders = [AudioFolder(audios.toList(), '', 0, 0)] {
+      : folders = [AudioFolder(audios.toList(), '', 0, 0)],
+        scanRoots = const [] {
     _buildCollections();
   }
 
@@ -61,33 +63,44 @@ class AudioLibrary {
   ///     "version": 110
   /// }
   /// ```
-  static Future<void> initFromIndex() async {
-    try {
-      final supportPath = (await getAppDataDir()).path;
-      final indexPath = "$supportPath\\index.json";
-
-      final indexStr = File(indexPath).readAsStringSync();
-      final Map indexJson = json.decode(indexStr);
-      final List foldersJson = indexJson["folders"];
-      final List<AudioFolder> folders = [];
-
-      for (Map folderMap in foldersJson) {
-        final List audiosJson = folderMap["audios"];
-        final List<Audio> audios = [];
-        for (Map audioMap in audiosJson) {
-          audios.add(Audio.fromMap(audioMap));
-        }
-        folders.add(AudioFolder.fromMap(folderMap, audios));
-      }
-
-      _instance = AudioLibrary._(folders);
-
-      instance.artistCollection.clear();
-      instance.albumCollection.clear();
-      instance._buildCollections();
-    } catch (err, trace) {
-      LOGGER.e(err, stackTrace: trace);
+  static Future<void> initFromIndex({File? indexFile}) async {
+    final file = indexFile ??
+        File(
+            '${(await getAppDataDir()).path}${Platform.pathSeparator}index.json');
+    final decoded = json.decode(await file.readAsString());
+    if (decoded is! Map) {
+      throw const FormatException('Invalid library index envelope');
     }
+
+    final foldersJson = decoded['folders'];
+    if (foldersJson is! List) {
+      throw const FormatException('Invalid library folders');
+    }
+    final rootsJson = decoded['roots'];
+    if (rootsJson != null && rootsJson is! List) {
+      throw const FormatException('Invalid library scan roots');
+    }
+
+    final folders = <AudioFolder>[];
+    for (final encodedFolder in foldersJson) {
+      if (encodedFolder is! Map || encodedFolder['audios'] is! List) {
+        throw const FormatException('Invalid library folder');
+      }
+      final audios = <Audio>[];
+      for (final encodedAudio in encodedFolder['audios'] as List) {
+        if (encodedAudio is! Map) {
+          throw const FormatException('Invalid library audio');
+        }
+        audios.add(Audio.fromMap(encodedAudio));
+      }
+      folders.add(AudioFolder.fromMap(encodedFolder, audios));
+    }
+
+    final loaded = AudioLibrary._(
+      folders,
+      scanRoots: rootsJson?.whereType<String>() ?? const [],
+    ).._buildCollections();
+    _instance = loaded;
   }
 
   void _buildCollections() {

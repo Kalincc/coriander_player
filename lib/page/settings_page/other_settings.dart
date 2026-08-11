@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/component/build_index_state_view.dart';
@@ -80,7 +81,14 @@ class AudioLibraryEditor extends StatelessWidget {
 }
 
 class AudioLibraryEditorDialog extends StatefulWidget {
-  const AudioLibraryEditorDialog({super.key});
+  const AudioLibraryEditorDialog({
+    super.key,
+    this.applicationSupportDirectory,
+    this.buildIndex = buildIndexFromFoldersRecursively,
+  });
+
+  final Future<Directory>? applicationSupportDirectory;
+  final BuildIndexStream buildIndex;
 
   @override
   State<AudioLibraryEditorDialog> createState() =>
@@ -89,21 +97,32 @@ class AudioLibraryEditorDialog extends StatefulWidget {
 
 class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
   final folders = List.generate(
-    AudioLibrary.instance.folders.length,
-    (i) => AudioLibrary.instance.folders[i].path,
+    AudioLibrary.instance.scanRoots.length,
+    (i) => AudioLibrary.instance.scanRoots[i],
   );
 
-  final applicationSupportDirectory = getAppDataDir();
+  late final Future<Directory> applicationSupportDirectory;
 
   bool editing = true;
   LibraryUpdateCoordinator? _coordinator;
+
+  @override
+  void initState() {
+    super.initState();
+    applicationSupportDirectory =
+        widget.applicationSupportDirectory ?? getAppDataDir();
+  }
 
   LibraryUpdateCoordinator _createCoordinator(
     String indexPath, {
     Future<Stream<IndexActionState>> Function()? scan,
   }) =>
       LibraryUpdateCoordinator(
-        scan: scan ?? () async => updateIndex(indexPath: indexPath),
+        scan: scan ??
+            () async => widget.buildIndex(
+                  folders: List.unmodifiable(folders),
+                  indexPath: indexPath,
+                ),
         reloadLibrary: AudioLibrary.initFromIndex,
         reconcileAppData: () async {
           await readPlaylists();
@@ -111,10 +130,11 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
           await PlayService.instance
               .reconcilePlaybackData(AudioLibrary.instance.audioCollection);
         },
-        refreshLyrics: LyricSearchIndex.instance.refreshCurrentLibrary,
+        refreshLyrics: LyricSearchIndex.instance.syncCurrentLibrary,
       );
 
   Future<void> _scanNow() async {
+    if (folders.isEmpty) return;
     final directory = await applicationSupportDirectory;
     final coordinator = _createCoordinator(directory.path);
     coordinator.addListener(_onProgressChanged);
@@ -166,6 +186,14 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
                   ),
                 ),
               ),
+              if (AudioLibrary.instance.scanRoots.isEmpty) ...[
+                Text(
+                  '旧版索引未保存扫描根目录。请重新选择文件夹后再扫描；当前音乐仍可播放。',
+                  key: const Key('legacy-library-roots-warning'),
+                  style: TextStyle(color: scheme.error),
+                ),
+                const SizedBox(height: 8),
+              ],
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 150),
@@ -199,6 +227,7 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
                               child: BuildIndexStateView(
                                 indexPath: snapshot.data!,
                                 folders: folders,
+                                buildIndex: widget.buildIndex,
                                 whenIndexBuilt: () async {
                                   final coordinator = _createCoordinator(
                                     snapshot.data!.path,
@@ -253,9 +282,11 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
                   const SizedBox(width: 8.0),
                   if (editing)
                     TextButton(
-                      onPressed: _coordinator?.progress.isUpdating == true
+                      onPressed: _coordinator?.progress.isUpdating == true ||
+                              folders.isEmpty
                           ? null
                           : _scanNow,
+                      key: const Key('scan-library-now-button'),
                       child: const Text("立即扫描"),
                     ),
                   if (editing) const SizedBox(width: 8.0),
@@ -265,11 +296,13 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
-                    onPressed: () {
-                      setState(() {
-                        editing = false;
-                      });
-                    },
+                    onPressed: folders.isEmpty
+                        ? null
+                        : () {
+                            setState(() {
+                              editing = false;
+                            });
+                          },
                     child: const Text("确定"),
                   ),
                 ],

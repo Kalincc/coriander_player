@@ -5,16 +5,37 @@ import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/audio_library.dart';
-import 'package:coriander_player/library/library_update_coordinator.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/library/playlist.dart';
 import 'package:coriander_player/lyric/lyric_source.dart';
 import 'package:coriander_player/play_service/play_service.dart';
-import 'package:coriander_player/page/settings_page/other_settings.dart';
-import 'package:coriander_player/src/rust/api/tag_reader.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
+class LibraryStartupLoader {
+  const LibraryStartupLoader({
+    required this.reloadLibrary,
+    required this.loadPlaylists,
+    required this.loadLyricSources,
+    required this.loadLyricIndex,
+    required this.loadPlaybackHistory,
+  });
+
+  final Future<void> Function() reloadLibrary;
+  final Future<void> Function() loadPlaylists;
+  final Future<void> Function() loadLyricSources;
+  final Future<void> Function() loadLyricIndex;
+  final Future<void> Function() loadPlaybackHistory;
+
+  Future<void> load() async {
+    await reloadLibrary();
+    await loadPlaylists();
+    await loadLyricSources();
+    await loadLyricIndex();
+    await loadPlaybackHistory();
+  }
+}
 
 class UpdatingPage extends StatelessWidget {
   const UpdatingPage({super.key});
@@ -44,15 +65,12 @@ class UpdatingStateView extends StatefulWidget {
   const UpdatingStateView({
     super.key,
     required this.indexPath,
-    this.coordinatorFactory,
-    this.showRebuildDialog,
+    this.loadLibrary,
     this.onUpdated,
   });
 
   final Directory indexPath;
-  final LibraryUpdateCoordinator Function(Directory indexPath)?
-      coordinatorFactory;
-  final Future<bool?> Function(BuildContext context)? showRebuildDialog;
+  final Future<void> Function()? loadLibrary;
   final VoidCallback? onUpdated;
 
   @override
@@ -60,33 +78,30 @@ class UpdatingStateView extends StatefulWidget {
 }
 
 class _UpdatingStateViewState extends State<UpdatingStateView> {
-  late final LibraryUpdateCoordinator _coordinator;
+  Object? _error;
 
   @override
   void initState() {
     super.initState();
-    _coordinator = widget.coordinatorFactory?.call(widget.indexPath) ??
-        _createCoordinator(widget.indexPath);
-    _coordinator.addListener(_onProgressChanged);
-    unawaited(_updateAndContinue());
+    unawaited(_loadAndContinue());
   }
 
-  LibraryUpdateCoordinator _createCoordinator(Directory indexPath) =>
-      LibraryUpdateCoordinator(
-        scan: () async => updateIndex(indexPath: indexPath.path),
-        reloadLibrary: AudioLibrary.initFromIndex,
-        reconcileAppData: () async {
-          await readPlaylists();
-          await readLyricSources();
-          await PlayService.instance
-              .reconcilePlaybackData(AudioLibrary.instance.audioCollection);
-        },
-        refreshLyrics: LyricSearchIndex.instance.refreshCurrentLibrary,
-      );
-
-  Future<void> _updateAndContinue() async {
+  Future<void> _loadAndContinue() async {
     try {
-      await _coordinator.update();
+      final loadLibrary = widget.loadLibrary ??
+          LibraryStartupLoader(
+            reloadLibrary: () => AudioLibrary.initFromIndex(
+              indexFile: File(
+                '${widget.indexPath.path}${Platform.pathSeparator}index.json',
+              ),
+            ),
+            loadPlaylists: readPlaylists,
+            loadLyricSources: readLyricSources,
+            loadLyricIndex: LyricSearchIndex.instance.load,
+            loadPlaybackHistory: () => PlayService.instance
+                .initializePlaybackData(AudioLibrary.instance.audioCollection),
+          ).load;
+      await loadLibrary();
       final onUpdated = widget.onUpdated;
       if (onUpdated != null) {
         onUpdated();
@@ -96,38 +111,15 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
         context.go(app_paths.START_PAGES[AppPreference.instance.startPage]);
       }
     } catch (error, trace) {
+      if (mounted) setState(() => _error = error);
       LOGGER.e(error, stackTrace: trace);
     }
-  }
-
-  void _onProgressChanged() {
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _rebuildLibraryAndRetry() async {
-    final rebuilt = await (widget.showRebuildDialog?.call(context) ??
-        showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => const AudioLibraryEditorDialog(),
-        ));
-    if (rebuilt == true && mounted) {
-      await _updateAndContinue();
-    }
-  }
-
-  @override
-  void dispose() {
-    _coordinator.removeListener(_onProgressChanged);
-    _coordinator.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final progress = _coordinator.progress;
-    final error = progress.error;
+    final error = _error;
 
     return SizedBox(
       width: 400,
@@ -135,30 +127,18 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           LinearProgressIndicator(
-            value: progress.action?.progress,
             borderRadius: BorderRadius.circular(2),
           ),
           const SizedBox(height: 8),
           Text(
-            error == null ? progress.action?.message ?? '' : '$error',
+            error == null ? '正在加载音乐库…' : '音乐库加载失败：$error',
+            key: error == null ? null : const Key('library-startup-error'),
             style: TextStyle(
                 color: error == null ? scheme.onSurface : scheme.error),
             textAlign: TextAlign.center,
           ),
-          if (_requiresLibraryRebuild(error)) ...[
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              key: const Key('rebuild-library-button'),
-              onPressed: _rebuildLibraryAndRetry,
-              icon: const Icon(Icons.folder_open),
-              label: const Text('打开文件夹管理并完整重建'),
-            ),
-          ],
         ],
       ),
     );
   }
 }
-
-bool _requiresLibraryRebuild(Object? error) =>
-    error.toString().contains('index is missing configured scan roots');
