@@ -11,11 +11,24 @@ class LocalJsonStore {
   final MoveFile _moveFile;
 
   Future<Object?> read(String fileName) async {
-    final file = File(_pathFor(fileName));
-    if (!await file.exists()) {
+    final primary = File(_pathFor(fileName));
+    final backup = File('${primary.path}.bak');
+
+    if (!await primary.exists()) {
+      if (await backup.exists()) {
+        return _decode(backup);
+      }
       return null;
     }
-    return json.decode(await file.readAsString());
+
+    try {
+      return await _decode(primary);
+    } on FormatException {
+      if (await backup.exists()) {
+        return _decode(backup);
+      }
+      rethrow;
+    }
   }
 
   Future<void> writeAtomically(String fileName, Object value) async {
@@ -50,6 +63,9 @@ class LocalJsonStore {
 
   String _pathFor(String fileName) =>
       '${directory.path}${Platform.pathSeparator}$fileName';
+
+  Future<Object?> _decode(File file) async =>
+      json.decode(await file.readAsString());
 
   static Future<void> _renameFile(File source, File destination) async {
     await source.rename(destination.path);

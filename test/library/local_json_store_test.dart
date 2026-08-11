@@ -28,6 +28,30 @@ void main() {
     expect(await store.read('missing.json'), isNull);
   });
 
+  test('reads the backup when the primary JSON is missing', () async {
+    final store = LocalJsonStore(directory);
+    await File('${directory.path}${Platform.pathSeparator}saved.json.bak')
+        .writeAsString('{"version": 1, "items": ["backup"]}');
+
+    expect(await store.read('saved.json'), {
+      'version': 1,
+      'items': ['backup'],
+    });
+  });
+
+  test('reads the backup when the primary JSON is corrupt', () async {
+    final store = LocalJsonStore(directory);
+    await File('${directory.path}${Platform.pathSeparator}saved.json')
+        .writeAsString('{not valid JSON');
+    await File('${directory.path}${Platform.pathSeparator}saved.json.bak')
+        .writeAsString('{"version": 1, "items": ["backup"]}');
+
+    expect(await store.read('saved.json'), {
+      'version': 1,
+      'items': ['backup'],
+    });
+  });
+
   test('replaces a JSON file and retains the prior version as a backup',
       () async {
     final store = LocalJsonStore(directory);
