@@ -807,7 +807,7 @@ fn legacy_update_index(index_path: String, sink: StreamSink<IndexActionState>) -
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FileFingerprint {
     modified: u64,
-    size: u64,
+    size: Option<u64>,
 }
 
 impl FileFingerprint {
@@ -819,8 +819,13 @@ impl FileFingerprint {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or(Duration::ZERO)
                 .as_secs(),
-            size: metadata.len(),
+            size: Some(metadata.len()),
         })
+    }
+
+    fn matches(self, current: Self) -> bool {
+        self.modified == current.modified
+            && self.size.map(|size| Some(size) == current.size).unwrap_or(true)
     }
 }
 
@@ -913,7 +918,7 @@ fn classify_path_changes(
         match existing.get(path) {
             None => changes.added.push(path.clone()),
             Some(existing_fingerprint) => match FileFingerprint::from_path(disk_path) {
-                Ok(fingerprint) if fingerprint == *existing_fingerprint => {
+                Ok(fingerprint) if existing_fingerprint.matches(fingerprint) => {
                     changes.unchanged.push(path.clone())
                 }
                 Ok(_) | Err(_) => changes.modified.push(path.clone()),
@@ -937,35 +942,40 @@ fn roots_from_index(index: &serde_json::Value) -> Vec<PathBuf> {
     if !roots.is_empty() {
         return roots;
     }
-    if let Some(folders) = index.as_array() {
-        return folders
-            .iter()
-            .filter_map(|folder| folder["path"].as_str())
-            .map(PathBuf::from)
-            .collect();
-    }
-    index["folders"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let folders = if let Some(folders) = index.as_array() {
+        folders
+    } else {
+        index["folders"].as_array().map(Vec::as_slice).unwrap_or(&[])
+    };
+    let legacy_roots: std::collections::BTreeSet<String> = folders
+        .iter()
         .filter_map(|folder| folder["path"].as_str())
-        .map(PathBuf::from)
-        .collect()
+        .filter_map(|path| {
+            let folder = PathBuf::from(path);
+            let candidate = folder
+                .parent()
+                .filter(|parent| parent.parent().is_some())
+                .unwrap_or(&folder);
+            normalize_index_path(candidate).ok()
+        })
+        .collect();
+    legacy_roots.into_iter().map(PathBuf::from).collect()
 }
 
 fn existing_audio_records(index: &serde_json::Value) -> HashMap<String, serde_json::Value> {
-    let mut records = HashMap::new();
-    for folder in index["folders"].as_array().into_iter().flatten() {
-        for audio in folder["audios"].as_array().into_iter().flatten() {
-            let Some(path) = audio["path"].as_str() else {
-                continue;
-            };
-            if let Ok(normalized) = normalize_index_path(Path::new(path)) {
-                records.entry(normalized).or_insert_with(|| audio.clone());
-            }
-        }
-    }
-    records
+    let folders = if let Some(folders) = index.as_array() {
+        folders
+    } else {
+        index["folders"].as_array().map(Vec::as_slice).unwrap_or(&[])
+    };
+    folders
+        .iter()
+        .flat_map(|folder| folder["audios"].as_array().into_iter().flatten())
+        .filter_map(|audio| {
+            let path = audio["path"].as_str()?;
+            Some((normalize_index_path(Path::new(path)).ok()?, audio.clone()))
+        })
+        .collect()
 }
 
 fn existing_fingerprints(
@@ -978,11 +988,21 @@ fn existing_fingerprints(
                 path.clone(),
                 FileFingerprint {
                     modified: audio["modified"].as_u64()?,
-                    size: audio["size"].as_u64()?,
+                    size: audio["size"].as_u64(),
                 },
             ))
         })
         .collect()
+}
+
+fn with_current_size(
+    mut record: serde_json::Value,
+    disk_path: &Path,
+) -> serde_json::Value {
+    if let Ok(fingerprint) = FileFingerprint::from_path(disk_path) {
+        record["size"] = serde_json::json!(fingerprint.size.unwrap_or(0));
+    }
+    record
 }
 
 fn build_incremental_index(
@@ -1018,12 +1038,15 @@ fn build_incremental_index(
             Audio::read_from_path(disk_path).map(|audio| {
                 let mut value = audio.to_json_value();
                 if let Ok(fingerprint) = FileFingerprint::from_path(disk_path) {
-                    value["size"] = serde_json::json!(fingerprint.size);
+                    value["size"] = serde_json::json!(fingerprint.size.unwrap_or(0));
                 }
                 value
             })
         } else {
-            existing.get(normalized).cloned()
+            existing
+                .get(normalized)
+                .cloned()
+                .map(|record| with_current_size(record, disk_path))
         }
         .or_else(|| existing.get(normalized).cloned());
 
@@ -1151,7 +1174,10 @@ mod tests {
         );
         existing.insert(
             normalize_index_path(&root.join("removed.mp3")).unwrap(),
-            FileFingerprint { modified: 1, size: 1 },
+            FileFingerprint {
+                modified: 1,
+                size: Some(1),
+            },
         );
 
         fs::write(&modified, b"changed-size").unwrap();
@@ -1164,6 +1190,64 @@ mod tests {
         assert_eq!(changes.removed.len(), 1);
         assert!(changes.unchanged.contains(&normalize_index_path(&unchanged).unwrap()));
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn migrates_legacy_folders_to_safe_parent_roots() {
+        let root = std::env::temp_dir().join(format!(
+            "coriander-legacy-roots-{}",
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let artist_a = root.join("ArtistA");
+        let artist_b = root.join("ArtistB");
+        fs::create_dir_all(&artist_a).unwrap();
+        fs::create_dir_all(&artist_b).unwrap();
+        fs::write(artist_a.join("known.mp3"), b"known").unwrap();
+        let new_song = artist_b.join("new.mp3");
+        fs::write(&new_song, b"new").unwrap();
+
+        let legacy = serde_json::json!({
+            "version": 110,
+            "folders": [{"path": artist_a.to_string_lossy(), "audios": []}],
+        });
+        let roots = roots_from_index(&legacy);
+        let scanned = scan_audio_paths(&roots).unwrap();
+
+        assert!(scanned.contains_key(&normalize_index_path(&new_song).unwrap()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_fingerprint_without_size_keeps_unchanged_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "coriander-legacy-fingerprint-{}",
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let unchanged = root.join("unchanged.mp3");
+        let changed = root.join("changed.mp3");
+        fs::write(&unchanged, b"same").unwrap();
+        fs::write(&changed, b"old").unwrap();
+        let mut records = HashMap::new();
+        for path in [&unchanged, &changed] {
+            let normalized = normalize_index_path(path).unwrap();
+            let modified = FileFingerprint::from_path(path).unwrap().modified;
+            records.insert(normalized, serde_json::json!({"modified": modified}));
+        }
+        fs::write(&changed, b"changed-size").unwrap();
+
+        let scanned = scan_audio_paths(&[root.clone()]).unwrap();
+        let changes = classify_path_changes(&scanned, &existing_fingerprints(&records));
+
+        assert_eq!(changes.unchanged, [normalize_index_path(&unchanged).unwrap()]);
+        assert_eq!(changes.modified, [normalize_index_path(&changed).unwrap()]);
         fs::remove_dir_all(root).unwrap();
     }
 }

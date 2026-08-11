@@ -107,6 +107,20 @@ void main() {
     await toggleLiked(song, store: store);
     expect(isLiked(song), isFalse);
   });
+
+  test('removes deleted songs from every playlist during reconciliation',
+      () async {
+    final kept = makeAudio('D:/music/kept.flac');
+    final deleted = makeAudio('D:/music/deleted.flac');
+    PLAYLISTS.add(Playlist('收藏', {
+      kept.path: kept,
+      deleted.path: deleted,
+    }));
+
+    await reconcilePlaylistAudios([kept], store: store);
+
+    expect(PLAYLISTS.single.audios.keys, [kept.path]);
+  });
 }
 
 class _TestRustLibApi implements RustLibApi {

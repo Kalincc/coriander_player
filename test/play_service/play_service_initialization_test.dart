@@ -18,4 +18,19 @@ void main() {
 
     expect(calls, ['queue:0', 'history']);
   });
+
+  test('reconciles deleted queue and history paths after a library scan',
+      () async {
+    final liveQueuePaths = <String>{'kept', 'deleted'};
+    final liveHistoryPaths = <String>{'kept', 'deleted'};
+    final reconciler = PlaybackDataReconciler(
+      reconcileQueue: (_) async => liveQueuePaths.remove('deleted'),
+      reconcileHistory: (_) async => liveHistoryPaths.remove('deleted'),
+    );
+
+    await reconciler.reconcile(const <Audio>[]);
+
+    expect(liveQueuePaths, {'kept'});
+    expect(liveHistoryPaths, {'kept'});
+  });
 }

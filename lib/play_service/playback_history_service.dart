@@ -53,6 +53,29 @@ class PlaybackHistoryService extends ChangeNotifier {
     }
   }
 
+  Future<void> reconcileLibrary(Iterable<Audio> library) async {
+    final availablePaths = library.map((audio) => audio.path).toSet();
+    final retained = _retainRecent(
+      _events.where((event) => availablePaths.contains(event.path)),
+    );
+    final eventsChanged = !_sameEvents(_events, retained);
+    final session = _session;
+    final sessionChanged =
+        session != null && !availablePaths.contains(session.audio.path);
+    if (!eventsChanged && !sessionChanged) return;
+
+    if (eventsChanged) {
+      _events
+        ..clear()
+        ..addAll(retained);
+    }
+    if (sessionChanged) {
+      _session = null;
+    }
+    notifyListeners();
+    if (eventsChanged) await _persist();
+  }
+
   void startSession(
     Audio audio, {
     DateTime? startedAt,
@@ -120,6 +143,17 @@ class PlaybackHistoryService extends ChangeNotifier {
   ) {
     final cutoff = _oneYearBefore(_now());
     return events.where((event) => !event.startedAt.isBefore(cutoff)).toList();
+  }
+
+  bool _sameEvents(
+    List<PlaybackHistoryEvent> current,
+    List<PlaybackHistoryEvent> next,
+  ) {
+    if (current.length != next.length) return false;
+    for (var index = 0; index < current.length; index++) {
+      if (current[index] != next[index]) return false;
+    }
+    return true;
   }
 
   Future<void> _persist() async {

@@ -1,6 +1,7 @@
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/local_json_store.dart';
+import 'package:coriander_player/library/playlist.dart';
 import 'package:coriander_player/play_service/desktop_lyric_service.dart';
 import 'package:coriander_player/play_service/lyric_service.dart';
 import 'package:coriander_player/play_service/playback_history_service.dart';
@@ -19,6 +20,22 @@ class PlaybackDataInitializer {
   Future<void> initialize(Iterable<Audio> library) async {
     await loadQueue(library);
     await loadHistory();
+  }
+}
+
+class PlaybackDataReconciler {
+  PlaybackDataReconciler({
+    required this.reconcileQueue,
+    required this.reconcileHistory,
+  });
+
+  final Future<void> Function(Iterable<Audio> library) reconcileQueue;
+  final Future<void> Function(Iterable<Audio> library) reconcileHistory;
+
+  Future<void> reconcile(Iterable<Audio> library) async {
+    final snapshot = List<Audio>.from(library);
+    await reconcileQueue(snapshot);
+    await reconcileHistory(snapshot);
   }
 }
 
@@ -64,6 +81,23 @@ class PlayService {
       loadQueue: loadPlaybackQueue,
       loadHistory: loadPlaybackHistory,
     ).initialize(library);
+  }
+
+  Future<void> reconcilePlaybackData(Iterable<Audio> library) async {
+    final snapshot = List<Audio>.from(library);
+    if (_loadedPlaybackQueueService == null ||
+        _loadedPlaybackHistoryService == null) {
+      await initializePlaybackData(snapshot);
+    }
+    final queue = _loadedPlaybackQueueService;
+    final history = _loadedPlaybackHistoryService;
+    if (queue != null && history != null) {
+      await PlaybackDataReconciler(
+        reconcileQueue: queue.reconcile,
+        reconcileHistory: history.reconcileLibrary,
+      ).reconcile(snapshot);
+    }
+    await reconcilePlaylistAudios(snapshot);
   }
 
   Future<PlaybackQueueService> _createPlaybackQueueService() async {

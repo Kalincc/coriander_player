@@ -204,6 +204,20 @@ void main() {
 
     expect(history.events.map((event) => event.path), ['D:/music/kept.flac']);
   });
+
+  test('removes deleted paths while reconciling the current library', () async {
+    final kept = makeAudio('D:/music/kept.flac');
+    final deleted = makeAudio('D:/music/deleted.flac');
+    for (final audio in [kept, deleted]) {
+      history.startSession(audio);
+      history.recordPosition(const Duration(seconds: 30));
+      await history.endSession();
+    }
+
+    await history.reconcileLibrary([kept]);
+
+    expect(history.events.map((event) => event.path), [kept.path]);
+  });
 }
 
 class _TestRustLibApi implements RustLibApi {

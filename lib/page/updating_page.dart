@@ -67,7 +67,7 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
           await readPlaylists();
           await readLyricSources();
           await PlayService.instance
-              .initializePlaybackData(AudioLibrary.instance.audioCollection);
+              .reconcilePlaybackData(AudioLibrary.instance.audioCollection);
         },
         refreshLyrics: LyricSearchIndex.instance.refreshCurrentLibrary,
       );

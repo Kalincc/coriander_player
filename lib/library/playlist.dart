@@ -80,6 +80,28 @@ Future<void> toggleLiked(Audio audio, {LocalJsonStore? store}) async {
   playlistRevision.value++;
 }
 
+Future<void> reconcilePlaylistAudios(
+  Iterable<Audio> library, {
+  LocalJsonStore? store,
+}) async {
+  final availablePaths = library.map((audio) => audio.path).toSet();
+  var changed = false;
+  for (final playlist in PLAYLISTS) {
+    final deletedPaths = playlist.audios.keys
+        .where((path) => !availablePaths.contains(path))
+        .toList(growable: false);
+    if (deletedPaths.isEmpty) continue;
+    changed = true;
+    for (final path in deletedPaths) {
+      playlist.audios.remove(path);
+    }
+  }
+  if (!changed) return;
+
+  await savePlaylists(store: store);
+  playlistRevision.value++;
+}
+
 bool removePlaylist(Playlist playlist) {
   if (playlist.isSystem) {
     return false;
