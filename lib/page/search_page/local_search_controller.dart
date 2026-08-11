@@ -27,16 +27,16 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
   static const _searchBatchSize = 25;
 
   final LyricSearchIndex lyricIndex;
-  final AudioLibrary library;
+  final AudioLibrary Function() _libraryProvider;
   final Future<void> Function() _yieldToEventLoop;
 
   int _generation = 0;
 
   LocalSearchController({
     required this.lyricIndex,
-    AudioLibrary? library,
+    AudioLibrary Function()? libraryProvider,
     Future<void> Function()? yieldToEventLoop,
-  })  : library = library ?? AudioLibrary.instance,
+  })  : _libraryProvider = libraryProvider ?? (() => AudioLibrary.instance),
         _yieldToEventLoop =
             yieldToEventLoop ?? (() => Future<void>.delayed(Duration.zero)),
         super(
@@ -49,6 +49,7 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
 
   Future<void> search(String query) async {
     final generation = ++_generation;
+    final library = _libraryProvider();
     final normalizedQuery = query.trim();
     final result = UnionSearchResult(normalizedQuery);
     value = LocalSearchState(

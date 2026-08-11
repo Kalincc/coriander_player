@@ -25,7 +25,7 @@
 **该播放器发行版已经附带桌面歌词组件。项目仓库请见 [desktop_lyric](https://github.com/Ferry-200/desktop_lyric.git)**
 
 ## 安装
-1. 下载 [Release](https://github.com/Ferry-200/coriander_player/releases/latest) 里文件安装
+1. 下载 [Release](https://github.com/Kalincc/coriander_player/releases/latest) 里文件安装
 2. **（已过时，现在的体验版已经落后于正式版）** 你也可以到 [Action 构建版本（体验版）介绍](https://github.com/Ferry-200/coriander_player/issues/49) 下载体验版 :)
 3. 通过 scoop 安装，使用此 [bucket](https://github.com/jinzhongjia/scoop-bucket)
 ```sh
@@ -156,7 +156,7 @@ scoop install jin/coriander_player
 ![桌面歌词：个性化设置](软件截图/桌面歌词（个性化设置）.png)
 ![桌面歌词：夜间模式](软件截图/桌面歌词（夜间模式）.png)
 
-## 本次 A 路线更新（v1.5.1-kalin.5）
+## 本次 A 路线更新（v1.5.1-kalin.8）
 
 本版本继续基于 [Ferry-200/coriander_player](https://github.com/Ferry-200/coriander_player) 开发，重点增强本地音乐库的日常使用体验：
 
