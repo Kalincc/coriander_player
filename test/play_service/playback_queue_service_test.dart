@@ -155,6 +155,21 @@ void main() {
     final restored = queueSnapshotForShuffleRestore(playlistBackup);
     expect(restored, [first, next, last]);
   });
+
+  test('appends through the playback command once and persists the queue',
+      () async {
+    final first = makeAudio('D:/music/first.flac');
+    final appended = makeAudio('D:/music/appended.flac');
+    final queue = PlaybackQueueService(store: store);
+    await queue.setQueue([first], currentPath: first.path);
+
+    expect(await appendToPlaybackQueue(queue, appended), isTrue);
+    expect(await appendToPlaybackQueue(queue, appended), isFalse);
+
+    final restored = PlaybackQueueService(store: store);
+    await restored.load([first, appended]);
+    expect(restored.items, [first, appended]);
+  });
 }
 
 class _TestRustLibApi implements RustLibApi {

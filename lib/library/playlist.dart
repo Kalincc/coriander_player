@@ -10,6 +10,8 @@ const likedPlaylistName = '我喜欢';
 const _playlistsFileName = 'playlists.json';
 const _playlistsVersion = 1;
 
+bool isReservedPlaylistName(String name) => name.trim() == likedPlaylistName;
+
 List<Playlist> PLAYLISTS = [];
 final playlistRevision = ValueNotifier(0);
 
@@ -109,6 +111,12 @@ bool removePlaylist(Playlist playlist) {
   return PLAYLISTS.remove(playlist);
 }
 
+bool createPlaylist(String name) {
+  if (isReservedPlaylistName(name)) return false;
+  PLAYLISTS.add(Playlist(name, {}));
+  return true;
+}
+
 Future<LocalJsonStore> _defaultStore() async =>
     LocalJsonStore(await getAppDataDir());
 
@@ -169,14 +177,25 @@ bool _sameAudioPaths(Map<String, Audio> first, Map<String, Audio> second) {
 }
 
 class Playlist {
-  Playlist(String name, this.audios, {this.isSystem = false}) : _name = name;
+  factory Playlist(
+    String name,
+    Map<String, Audio> audios, {
+    bool isSystem = false,
+  }) {
+    if (!isSystem && isReservedPlaylistName(name)) {
+      throw ArgumentError.value(name, 'name', 'Reserved playlist name');
+    }
+    return Playlist._(name, audios, isSystem: isSystem);
+  }
+
+  Playlist._(this._name, this.audios, {required this.isSystem});
 
   String _name;
 
   String get name => _name;
 
   set name(String value) {
-    if (!isSystem) {
+    if (!isSystem && !isReservedPlaylistName(value)) {
       _name = value;
     }
   }
@@ -187,10 +206,10 @@ class Playlist {
   final bool isSystem;
 
   bool rename(String value) {
-    if (isSystem) {
+    if (isSystem || isReservedPlaylistName(value)) {
       return false;
     }
-    name = value;
+    _name = value;
     return true;
   }
 
@@ -212,7 +231,7 @@ class Playlist {
         audios[audio.path] = audio;
       }
     }
-    return Playlist(
+    return Playlist._(
       map['name'] as String,
       audios,
       isSystem: map['isSystem'] == true,

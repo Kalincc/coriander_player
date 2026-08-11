@@ -49,3 +49,43 @@
   for about 60 seconds and was safely terminated. It was not retried.
 - Cargo/Rust verification was not attempted and no toolchain was installed,
   per the task brief.
+
+## Final review fix round 1
+
+- Full rebuild scanning now propagates root/subdirectory `read_dir`, directory
+  entry, file-type, recursive, metadata, and modified-time failures. The
+  top-level rebuild uses `?`, so a failed scan cannot write a partial index;
+  the existing coordinator already stops reload/reconcile after a scan error.
+  A static Rust regression test covers a missing/unreadable full-rebuild root.
+- `cargo --version` confirmed Cargo is not installed on this machine. No Rust
+  toolchain was installed; the new Rust test was added but could not run.
+- The listening report now renders a non-playable “最近播放” section using the
+  service's newest-first `recent20` list, with title/path fallback, listened
+  duration, timestamp, 20-item cap, and empty state. README now calls this
+  out explicitly.
+- Queue attachment snapshots the restored ordered queue before shuffle is
+  used; enabling shuffle refreshes that snapshot, and disabling shuffle falls
+  back to the current queue rather than clearing it.
+- Regular playlists now reject the protected `我喜欢` name at construction,
+  repository creation, and rename boundaries. Legacy JSON is still parsed so
+  startup migration can merge old duplicate names. The UI shows a failure
+  message for a rejected create/rename.
+- AudioTile's right-click menu now includes “添加到播放队尾”, routed through
+  `PlaybackService.appendToQueue` and the de-duplicating persisted queue API.
+- Corrected two pre-existing listening-report expectations: UTC end uses the
+  microsecond parameter, and Top 10 retains the missing-metadata path fallback.
+
+### Fix-round verification
+
+- RED/GREEN: reserved-name playlist test failed before the constructor/repository
+  guard and then passed; `flutter test test/library/playlist_test.dart` passed
+  6/6. The append command test failed to compile before its command helper and
+  then `flutter test test/play_service/playback_queue_service_test.dart` passed
+  6/6. The new report-page test was written before the UI change, but its Flutter
+  runner produced no framework output for about 60 seconds in both attempts and
+  was safely stopped rather than retried further.
+- `flutter test test/library/listening_report_test.dart` passed 3/3.
+- `flutter analyze lib test` reports the existing 66 info diagnostics and no
+  warning/error diagnostics. Changed Dart files were formatted.
+- The one permitted final `flutter test` attempt produced no framework output
+  for about 60 seconds and was safely terminated; it was not retried.

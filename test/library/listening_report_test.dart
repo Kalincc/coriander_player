@@ -66,7 +66,7 @@ void main() {
     final period = ReportPeriod.recentTwelveMonths(now);
 
     expect(period.start, DateTime.utc(2025, 8, 5));
-    expect(period.end, DateTime.utc(2026, 8, 5, 14, 30, 0, 1));
+    expect(period.end, DateTime.utc(2026, 8, 5, 14, 30, 0, 0, 1));
   });
 
   test('aggregates the top ten ranks by plays then duration then name', () {
@@ -98,7 +98,9 @@ void main() {
     expect(report.songRanks.first.playCount, 2);
     expect(report.songRanks.first.listened, const Duration(seconds: 70));
     expect(report.songRanks[1].name, 'Song 1');
-    expect(report.songRanks.last.name, 'Song 8');
+    expect(report.songRanks.map((rank) => rank.name),
+        contains('D:/music/missing.flac'));
+    expect(report.songRanks.last.name, 'Song 7');
     expect(
         report.artistRanks.map((rank) => rank.name), ['Artist B', 'Artist A']);
     expect(report.albumRanks.map((rank) => rank.name), ['Album B', 'Album A']);

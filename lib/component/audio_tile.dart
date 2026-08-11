@@ -80,6 +80,19 @@ class AudioTile extends StatelessWidget {
           child: const Text("下一首播放"),
         ),
 
+        /// 添加到播放队尾
+        MenuItemButton(
+          onPressed: () async {
+            final added =
+                await PlayService.instance.playbackService.appendToQueue(audio);
+            showTextOnSnackBar(
+              added ? '已添加到播放队尾' : '歌曲已在播放队列中或队列尚未就绪',
+            );
+          },
+          leadingIcon: const Icon(Symbols.queue_music),
+          child: const Text('添加到播放队尾'),
+        ),
+
         /// 多选
         if (multiSelectController != null)
           MenuItemButton(

@@ -22,9 +22,13 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       builder: (context) => const _NewPlaylistDialog(),
     );
     if (name == null) return;
+    var created = false;
     setState(() {
-      PLAYLISTS.add(Playlist(name, {}));
+      created = createPlaylist(name);
     });
+    if (!created) {
+      showTextOnSnackBar('“我喜欢”是系统歌单，不能重复创建');
+    }
   }
 
   void editPlaylist(
@@ -36,8 +40,12 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       builder: (context) => const _EditPlaylistDialog(),
     );
     if (name == null) return;
+    if (!playlist.rename(name)) {
+      showTextOnSnackBar('“我喜欢”是系统歌单，不能使用这个名称');
+      return;
+    }
     setState(() {
-      playlist.name = name;
+      // The repository accepted the rename; this rebuild updates the title.
     });
   }
 

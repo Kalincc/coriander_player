@@ -168,6 +168,60 @@ void main() {
     expect(find.text('1 次'), findsOneWidget);
   });
 
+  testWidgets('shows the twenty most recent plays as inert rows',
+      (tester) async {
+    final now = DateTime(2026, 8, 5, 14);
+    final history = PlaybackHistoryService(
+      store: LocalJsonStore(directory),
+      now: () => now,
+    );
+    final audios = List.generate(
+      21,
+      (index) => _audio(
+        path: 'D:/music/recent-$index.flac',
+        title: 'Recent $index',
+      ),
+    );
+    for (var index = 0; index < audios.length; index++) {
+      history.startSession(
+        audios[index],
+        startedAt: DateTime(2026, 8, 5, 10, index),
+      );
+      history.recordPosition(const Duration(seconds: 30));
+      await history.endSession();
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListeningReportPage(
+          historyService: history,
+          audios: audios,
+          now: () => now,
+        ),
+      ),
+    );
+
+    expect(find.text('最近播放'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('recent-history-item-D:/music/recent-20.flac')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('recent-history-item-D:/music/recent-0.flac')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<ListTile>(
+            find.byKey(
+              const ValueKey('recent-history-item-D:/music/recent-20.flac'),
+            ),
+          )
+          .onTap,
+      isNull,
+    );
+  });
+
   testWidgets('renders only ten song ranks when more songs are available',
       (tester) async {
     final now = DateTime(2026, 8, 5, 14);

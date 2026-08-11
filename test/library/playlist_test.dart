@@ -66,11 +66,14 @@ void main() {
     final first = makeAudio('D:/music/first.flac');
     final second = makeAudio('D:/music/second.flac');
     await store.writeAtomically('playlists.json', [
-      Playlist(likedPlaylistName, {first.path: first}).toMap(),
-      Playlist(likedPlaylistName, {
-        first.path: first,
-        second.path: second,
-      }).toMap(),
+      {
+        'name': likedPlaylistName,
+        'audios': [first.toMap()],
+      },
+      {
+        'name': likedPlaylistName,
+        'audios': [first.toMap(), second.toMap()],
+      },
     ]);
 
     await readPlaylists(store: store);
@@ -91,6 +94,20 @@ void main() {
     expect(removePlaylist(liked), isFalse);
     expect(liked.name, likedPlaylistName);
     expect(PLAYLISTS, [same(liked)]);
+  });
+
+  test('rejects the protected name for regular playlist creation and rename',
+      () {
+    expect(
+      () => Playlist(likedPlaylistName, {}),
+      throwsArgumentError,
+    );
+    expect(createPlaylist(likedPlaylistName), isFalse);
+    expect(PLAYLISTS, isEmpty);
+
+    final regular = Playlist('regular', {});
+    expect(regular.rename(likedPlaylistName), isFalse);
+    expect(regular.name, 'regular');
   });
 
   test('toggles a song in the liked playlist and persists the change',

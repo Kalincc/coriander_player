@@ -14,6 +14,12 @@ import 'package:flutter/foundation.dart';
 List<Audio> queueSnapshotForShuffleRestore(Iterable<Audio> queue) =>
     List<Audio>.from(queue);
 
+Future<bool> appendToPlaybackQueue(
+  PlaybackQueueService? queueService,
+  Audio audio,
+) async =>
+    queueService != null && await queueService.append(audio);
+
 void finalizePlaybackHistorySession(PlaybackHistoryService? historyService) {
   if (historyService == null) return;
   unawaited(historyService.endSession().catchError((err, trace) {
@@ -133,6 +139,7 @@ class PlaybackService extends ChangeNotifier {
     _playbackQueueService = queueService;
     queueService.addListener(_syncPlaylistFromQueue);
     _syncPlaylistFromQueue();
+    _playlistBackup = queueSnapshotForShuffleRestore(queueService.items);
   }
 
   void _syncPlaylistFromQueue() {
@@ -317,6 +324,10 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
+  Future<bool> appendToQueue(Audio audio) async {
+    return appendToPlaybackQueue(_playbackQueueService, audio);
+  }
+
   Future<void> removeFromQueue(int index) async {
     final queueService = _playbackQueueService;
     if (queueService == null ||
@@ -358,6 +369,7 @@ class PlaybackService extends ChangeNotifier {
     if (flag == shuffle.value) return;
 
     if (flag) {
+      _playlistBackup = queueSnapshotForShuffleRestore(playlist.value);
       final shuffled = List<Audio>.from(playlist.value)..shuffle();
       shuffled.remove(nowPlaying!);
       shuffled.insert(0, nowPlaying!);
@@ -365,7 +377,9 @@ class PlaybackService extends ChangeNotifier {
       _playlistIndex = 0;
       shuffle.value = true;
     } else {
-      final original = List<Audio>.from(_playlistBackup);
+      final original = _playlistBackup.isEmpty
+          ? queueSnapshotForShuffleRestore(playlist.value)
+          : List<Audio>.from(_playlistBackup);
       _setQueue(original, current: nowPlaying!);
       _playlistIndex = original.indexOf(nowPlaying!);
       shuffle.value = false;

@@ -285,6 +285,13 @@ struct AudioFolder {
     audios: Vec<Audio>,
 }
 
+fn read_directory_strictly(path: &Path) -> io::Result<fs::ReadDir> {
+    fs::read_dir(path).map_err(|err| {
+        log_to_dart(format!("{:?}: {}", path, err));
+        err
+    })
+}
+
 impl AudioFolder {
     fn to_json_value(&self) -> serde_json::Value {
         let mut audios_json: Vec<serde_json::Value> = vec![];
@@ -370,13 +377,7 @@ impl AudioFolder {
             return Ok(());
         }
 
-        let dir = match fs::read_dir(folder) {
-            Ok(val) => val,
-            Err(err) => {
-                log_to_dart(format!("{:?}: {}", folder, err));
-                return Ok(());
-            }
-        };
+        let dir = read_directory_strictly(folder)?;
 
         let _ = sink.add(IndexActionState {
             progress: *scaned_count as f64 / *total_count as f64,
@@ -388,32 +389,26 @@ impl AudioFolder {
         let mut latest: u64 = 0;
 
         for item in dir {
-            let entry = match item {
-                Ok(value) => value,
-                Err(err) => {
-                    log_to_dart(err.to_string());
-                    continue;
-                }
-            };
+            let entry = item.map_err(|err| {
+                log_to_dart(err.to_string());
+                err
+            })?;
 
-            let file_type = match entry.file_type() {
-                Ok(value) => value,
-                Err(err) => {
-                    log_to_dart(err.to_string());
-                    continue;
-                }
-            };
+            let file_type = entry.file_type().map_err(|err| {
+                log_to_dart(err.to_string());
+                err
+            })?;
 
             if file_type.is_dir() {
                 *total_count += 1;
-                let _ = Self::read_from_folder_recursively(
+                Self::read_from_folder_recursively(
                     entry.path(),
                     result,
                     scaned_count,
                     total_count,
                     scaned_folders,
                     sink,
-                );
+                )?;
             } else if let Some(metadata) = Audio::read_from_path(entry.path()) {
                 if metadata.created > latest {
                     latest = metadata.created;
@@ -424,19 +419,23 @@ impl AudioFolder {
         }
 
         if !audios.is_empty() {
-            if let Ok(metadata) = fs::metadata(folder) {
-                if let Ok(modified) = metadata.modified() {
-                    result.push(AudioFolder {
-                        path: folder.to_string_lossy().to_string(),
-                        modified: modified
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or(Duration::ZERO)
-                            .as_secs(),
-                        latest,
-                        audios,
-                    });
-                }
-            }
+            let metadata = fs::metadata(folder).map_err(|err| {
+                log_to_dart(format!("{:?}: {}", folder, err));
+                err
+            })?;
+            let modified = metadata.modified().map_err(|err| {
+                log_to_dart(format!("{:?}: {}", folder, err));
+                err
+            })?;
+            result.push(AudioFolder {
+                path: folder.to_string_lossy().to_string(),
+                modified: modified
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::ZERO)
+                    .as_secs(),
+                latest,
+                audios,
+            });
         }
 
         *scaned_count += 1;
@@ -589,14 +588,14 @@ pub fn build_index_from_folders_recursively(
     let mut scaned_folders: HashSet<String> = HashSet::new();
 
     for item in &folders {
-        let _ = AudioFolder::read_from_folder_recursively(
+        AudioFolder::read_from_folder_recursively(
             Path::new(item),
             &mut audio_folders,
             &mut scaned,
             &mut total,
             &mut scaned_folders,
             &sink,
-        );
+        )?;
     }
 
     let mut audio_folders_json: Vec<serde_json::Value> = vec![];
@@ -1205,6 +1204,19 @@ mod tests {
         ));
 
         assert!(scan_audio_paths(&[missing]).is_err());
+    }
+
+    #[test]
+    fn rejects_an_unreadable_root_during_full_rebuild() {
+        let missing = std::env::temp_dir().join(format!(
+            "coriander-missing-full-rebuild-root-{}",
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        assert!(read_directory_strictly(&missing).is_err());
     }
 
     #[test]

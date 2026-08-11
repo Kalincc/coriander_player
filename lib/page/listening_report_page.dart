@@ -53,6 +53,7 @@ class _ListeningReportPageState extends State<ListeningReportPage> {
         onRangeChanged: (range) => setState(() => _range = range),
         period: _periodFor(_range, _now),
         events: historyService.events,
+        recentEvents: historyService.recent20,
         audios: _audios,
       ),
     );
@@ -65,6 +66,7 @@ class _ReportContent extends StatelessWidget {
     required this.onRangeChanged,
     required this.period,
     required this.events,
+    required this.recentEvents,
     required this.audios,
   });
 
@@ -72,6 +74,7 @@ class _ReportContent extends StatelessWidget {
   final ValueChanged<_ReportRange> onRangeChanged;
   final ReportPeriod period;
   final Iterable<PlaybackHistoryEvent> events;
+  final Iterable<PlaybackHistoryEvent> recentEvents;
   final Iterable<Audio> audios;
 
   @override
@@ -88,6 +91,11 @@ class _ReportContent extends StatelessWidget {
             _PeriodChooser(selected: range, onChanged: onRangeChanged),
             const SizedBox(height: 24),
             const Center(child: Text('这个周期还没有有效播放记录')),
+            const SizedBox(height: 16),
+            _RecentHistorySection(
+              events: recentEvents,
+              audiosByPath: metadata.audiosByPath,
+            ),
           ],
         ),
       );
@@ -137,6 +145,11 @@ class _ReportContent extends StatelessWidget {
                   ? null
                   : _ReportDestination(app_paths.ALBUM_DETAIL_PAGE, album);
             },
+          ),
+          const SizedBox(height: 16),
+          _RecentHistorySection(
+            events: recentEvents,
+            audiosByPath: metadata.audiosByPath,
           ),
         ],
       ),
@@ -299,6 +312,47 @@ class _ReportDestination {
   final Object extra;
 }
 
+class _RecentHistorySection extends StatelessWidget {
+  const _RecentHistorySection({
+    required this.events,
+    required this.audiosByPath,
+  });
+
+  final Iterable<PlaybackHistoryEvent> events;
+  final Map<String, Audio> audiosByPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final recent = events.take(20).toList(growable: false);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('最近播放', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            if (recent.isEmpty)
+              const Text('暂无最近播放记录')
+            else
+              ...recent.map((event) {
+                final title = audiosByPath[event.path]?.title.trim();
+                return ListTile(
+                  key: ValueKey('recent-history-item-${event.path}'),
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(title?.isNotEmpty == true ? title! : event.path),
+                  subtitle: Text(
+                    '${_formatDuration(event.listened)} · ${_formatHistoryTime(event.startedAt)}',
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ReportMetadata {
   _ReportMetadata._(
     this.audiosByPath,
@@ -364,4 +418,11 @@ String _formatDuration(Duration duration) {
   if (hours > 0) return '$hours小时$minutes分';
   if (minutes > 0) return '$minutes分$seconds秒';
   return '$seconds秒';
+}
+
+String _formatHistoryTime(DateTime value) {
+  final local = value.toLocal();
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+  return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
+      '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
 }
