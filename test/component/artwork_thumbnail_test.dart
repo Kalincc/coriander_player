@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:coriander_player/component/artwork_thumbnail.dart';
@@ -43,6 +44,33 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
+    expect(appIcon(), findsOneWidget);
+  });
+
+  testWidgets('uses the app icon while replacement artwork is pending',
+      (tester) async {
+    final loaded = MemoryImage(Uint8List.fromList([1]));
+    final pending = Completer<ImageProvider?>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ArtworkThumbnail(image: Future.value(loaded), size: 48),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Image && widget.image == loaded,
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ArtworkThumbnail(image: pending.future, size: 48),
+      ),
+    );
+
     expect(appIcon(), findsOneWidget);
   });
 }

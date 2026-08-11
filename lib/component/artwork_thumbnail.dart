@@ -26,7 +26,11 @@ class ArtworkThumbnail extends StatelessWidget {
             future: image,
             builder: (context, snapshot) {
               final provider = snapshot.data;
-              if (snapshot.hasError || provider == null) return fallback;
+              if (snapshot.connectionState != ConnectionState.done ||
+                  snapshot.hasError ||
+                  provider == null) {
+                return fallback;
+              }
               return Image(
                 image: provider,
                 width: size,

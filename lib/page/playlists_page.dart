@@ -52,99 +52,106 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    return ListenableBuilder(
+      listenable: playlistRevision,
+      builder: (context, _) {
+        final scheme = Theme.of(context).colorScheme;
 
-    return UniPage<Playlist>(
-      pref: AppPreference.instance.playlistsPagePref,
-      title: "歌单",
-      subtitle: "${PLAYLISTS.length} 个歌单",
-      contentList: PLAYLISTS,
-      contentBuilder: (context, item, i, multiSelectController) => ListTile(
-        leading: ArtworkThumbnail(
-          image: PLAYLISTS[i].latestAudio?.cover,
-          size: 48,
-        ),
-        title: Text(
-          PLAYLISTS[i].name,
-          softWrap: false,
-          maxLines: 1,
-        ),
-        subtitle: Text(
-          "${PLAYLISTS[i].audios.length}首乐曲",
-          softWrap: false,
-          maxLines: 1,
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!PLAYLISTS[i].isSystem) ...[
-              IconButton(
-                tooltip: "编辑",
-                onPressed: () => editPlaylist(context, PLAYLISTS[i]),
-                icon: const Icon(Symbols.edit),
-              ),
-              const SizedBox(width: 8.0),
-              IconButton(
-                tooltip: "删除",
-                onPressed: () => setState(() {
-                  removePlaylist(PLAYLISTS[i]);
-                }),
-                color: scheme.error,
-                icon: const Icon(Symbols.delete),
-              ),
-            ],
+        return UniPage<Playlist>(
+          pref: AppPreference.instance.playlistsPagePref,
+          title: "歌单",
+          subtitle: "${PLAYLISTS.length} 个歌单",
+          contentList: PLAYLISTS,
+          contentBuilder: (context, item, i, multiSelectController) => ListTile(
+            leading: ArtworkThumbnail(
+              image: PLAYLISTS[i].latestAudio?.cover,
+              size: 48,
+            ),
+            title: Text(
+              PLAYLISTS[i].name,
+              softWrap: false,
+              maxLines: 1,
+            ),
+            subtitle: Text(
+              "${PLAYLISTS[i].audios.length}首乐曲",
+              softWrap: false,
+              maxLines: 1,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!PLAYLISTS[i].isSystem) ...[
+                  IconButton(
+                    tooltip: "编辑",
+                    onPressed: () => editPlaylist(context, PLAYLISTS[i]),
+                    icon: const Icon(Symbols.edit),
+                  ),
+                  const SizedBox(width: 8.0),
+                  IconButton(
+                    tooltip: "删除",
+                    onPressed: () => setState(() {
+                      removePlaylist(PLAYLISTS[i]);
+                    }),
+                    color: scheme.error,
+                    icon: const Icon(Symbols.delete),
+                  ),
+                ],
+              ],
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8.0),
+            ),
+            onTap: () => context.push(
+              app_paths.PLAYLIST_DETAIL_PAGE,
+              extra: PLAYLISTS[i],
+            ),
+          ),
+          primaryAction: FilledButton.icon(
+            onPressed: () => newPlaylist(context),
+            icon: const Icon(Symbols.add),
+            label: const Text("新建歌单"),
+            style: const ButtonStyle(
+              fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+            ),
+          ),
+          enableShufflePlay: false,
+          enableSortMethod: true,
+          enableSortOrder: true,
+          enableContentViewSwitch: true,
+          sortMethods: [
+            SortMethodDesc(
+              icon: Symbols.title,
+              name: "名称",
+              method: (list, order) {
+                switch (order) {
+                  case SortOrder.ascending:
+                    list.sort((a, b) => a.name.localeCompareTo(b.name));
+                    break;
+                  case SortOrder.decending:
+                    list.sort((a, b) => b.name.localeCompareTo(a.name));
+                    break;
+                }
+              },
+            ),
+            SortMethodDesc(
+              icon: Symbols.music_note,
+              name: "歌曲数量",
+              method: (list, order) {
+                switch (order) {
+                  case SortOrder.ascending:
+                    list.sort(
+                        (a, b) => a.audios.length.compareTo(b.audios.length));
+                    break;
+                  case SortOrder.decending:
+                    list.sort(
+                        (a, b) => b.audios.length.compareTo(a.audios.length));
+                    break;
+                }
+              },
+            ),
           ],
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8.0),
-        ),
-        onTap: () => context.push(
-          app_paths.PLAYLIST_DETAIL_PAGE,
-          extra: PLAYLISTS[i],
-        ),
-      ),
-      primaryAction: FilledButton.icon(
-        onPressed: () => newPlaylist(context),
-        icon: const Icon(Symbols.add),
-        label: const Text("新建歌单"),
-        style: const ButtonStyle(
-          fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-        ),
-      ),
-      enableShufflePlay: false,
-      enableSortMethod: true,
-      enableSortOrder: true,
-      enableContentViewSwitch: true,
-      sortMethods: [
-        SortMethodDesc(
-          icon: Symbols.title,
-          name: "名称",
-          method: (list, order) {
-            switch (order) {
-              case SortOrder.ascending:
-                list.sort((a, b) => a.name.localeCompareTo(b.name));
-                break;
-              case SortOrder.decending:
-                list.sort((a, b) => b.name.localeCompareTo(a.name));
-                break;
-            }
-          },
-        ),
-        SortMethodDesc(
-          icon: Symbols.music_note,
-          name: "歌曲数量",
-          method: (list, order) {
-            switch (order) {
-              case SortOrder.ascending:
-                list.sort((a, b) => a.audios.length.compareTo(b.audios.length));
-                break;
-              case SortOrder.decending:
-                list.sort((a, b) => b.audios.length.compareTo(a.audios.length));
-                break;
-            }
-          },
-        ),
-      ],
+        );
+      },
     );
   }
 }

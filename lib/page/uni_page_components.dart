@@ -168,14 +168,13 @@ class AddAllToPlaylist extends StatelessWidget {
               EdgeInsets.symmetric(horizontal: 20),
             ),
           ),
-          onPressed: () {
-            for (var item in multiSelectController.selected) {
-              if (!PLAYLISTS[i].audios.containsKey(item.path)) {
-                PLAYLISTS[i].audios[item.path] = item;
-              }
-            }
+          onPressed: () async {
+            final added = await addAudiosToPlaylist(
+              PLAYLISTS[i],
+              multiSelectController.selected,
+            );
             showTextOnSnackBar(
-              "成功将${multiSelectController.selected.length}首添加到歌单“${PLAYLISTS[i].name}”",
+              "成功将$added首添加到歌单“${PLAYLISTS[i].name}”",
             );
           },
           child: Text(PLAYLISTS[i].name),
@@ -197,6 +196,19 @@ class AddAllToPlaylist extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<int> addAudiosToPlaylist(
+  Playlist playlist,
+  Iterable<Audio> audios, {
+  Future<void> Function()? persist,
+}) async {
+  var added = 0;
+  for (final audio in audios) {
+    if (addAudioToPlaylist(playlist, audio)) added++;
+  }
+  if (added > 0) await (persist ?? savePlaylists)();
+  return added;
 }
 
 class MultiSelectSelectOrClearAll<T> extends StatelessWidget {
