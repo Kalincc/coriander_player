@@ -27,3 +27,7 @@ Task 5: fix round 3 `3aa0142`; legacy indexes without persisted roots now safely
 Task 5: fix round 4 `3b020b6`; startup exposes rebuild recovery and Rust scan I/O errors abort before index write/reconcile.
 Task 5: fix round 5 `f00f63f`; format gate corrected. Final review READY (`task-5-rereview5.md`); Cargo/Rust tests unavailable and not run.
 Task 5: complete (`af6c85b`, `8de5d8f`, `f73a77e`, `3aa0142`, `3b020b6`, `f00f63f`; 42+ scoped Dart tests across rounds).
+Task 6: implementation `0bb98a8` (report page, week/month/12-month choices, Top10 cards, `/reports` route and side-nav entry; Flutter runner hung before framework output).
+Task 6: fix round 1 `e7d311f` (focused Top10/period/empty/metadata/UTC/navigation coverage and metadata seam; static checks clean; runner still unavailable).
+Task 6: fix round 2 `11f6eef` (summary value keys/assertions and actual GoRouter detail tap; final 5.6-sol review READY in static scope; Flutter GREEN remains unobserved due runner hang).
+Task 6: complete (`0bb98a8`, `e7d311f`, `11f6eef`; no playback/scanner behavior changes).
