@@ -335,10 +335,12 @@ class _RecentHistorySection extends StatelessWidget {
             if (recent.isEmpty)
               const Text('暂无最近播放记录')
             else
-              ...recent.map((event) {
+              ...recent.indexed.map((entry) {
+                final index = entry.$1;
+                final event = entry.$2;
                 final title = audiosByPath[event.path]?.title.trim();
                 return ListTile(
-                  key: ValueKey('recent-history-item-${event.path}'),
+                  key: ValueKey(recentHistoryItemKey(event, index)),
                   contentPadding: EdgeInsets.zero,
                   title: Text(title?.isNotEmpty == true ? title! : event.path),
                   subtitle: Text(

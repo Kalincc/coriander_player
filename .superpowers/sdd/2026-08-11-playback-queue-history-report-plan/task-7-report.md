@@ -89,3 +89,20 @@
   warning/error diagnostics. Changed Dart files were formatted.
 - The one permitted final `flutter test` attempt produced no framework output
   for about 60 seconds and was safely terminated; it was not retried.
+
+## Final review fix round 2
+
+- Recent-playback rows now use a stable key composed of the path, event start
+  timestamp in microseconds, and displayed index, so repeat events for the same
+  song cannot produce duplicate widget keys.
+- `BuildIndexStateView` now records stream errors, presents an error message,
+  and suppresses `whenIndexBuilt` from `onDone` once a build stream failed.
+  This prevents the successful reload/reconcile callback from running after a
+  Rust rebuild failure.
+- RED/GREEN: the duplicate-key helper test failed before the helper existed and
+  then `flutter test test/library/listening_report_test.dart` passed 4/4. The
+  fake index stream test failed before stream injection/error handling existed
+  and then `flutter test test/component/build_index_state_view_test.dart`
+  passed 1/1. Its expected error log is emitted by the test fake.
+- Scoped analysis of the changed report/index view files and tests reported no
+  issues; no page/full runner was started in this round.

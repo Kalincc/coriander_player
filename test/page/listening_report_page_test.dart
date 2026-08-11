@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:coriander_player/component/side_nav.dart';
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/listening_report.dart';
 import 'package:coriander_player/library/local_json_store.dart';
+import 'package:coriander_player/library/playback_history_models.dart';
 import 'package:coriander_player/page/listening_report_page.dart';
 import 'package:coriander_player/play_service/playback_history_service.dart';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
@@ -203,18 +205,52 @@ void main() {
 
     expect(find.text('最近播放'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('recent-history-item-D:/music/recent-20.flac')),
+      find.byKey(
+        ValueKey(
+          recentHistoryItemKey(
+            PlaybackHistoryEvent(
+              path: 'D:/music/recent-20.flac',
+              startedAt: DateTime(2026, 8, 5, 10, 20),
+              listened: const Duration(seconds: 30),
+              qualified: true,
+            ),
+            0,
+          ),
+        ),
+      ),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('recent-history-item-D:/music/recent-0.flac')),
+      find.byKey(
+        ValueKey(
+          recentHistoryItemKey(
+            PlaybackHistoryEvent(
+              path: 'D:/music/recent-0.flac',
+              startedAt: DateTime(2026, 8, 5, 10),
+              listened: const Duration(seconds: 30),
+              qualified: true,
+            ),
+            20,
+          ),
+        ),
+      ),
       findsNothing,
     );
     expect(
       tester
           .widget<ListTile>(
             find.byKey(
-              const ValueKey('recent-history-item-D:/music/recent-20.flac'),
+              ValueKey(
+                recentHistoryItemKey(
+                  PlaybackHistoryEvent(
+                    path: 'D:/music/recent-20.flac',
+                    startedAt: DateTime(2026, 8, 5, 10, 20),
+                    listened: const Duration(seconds: 30),
+                    qualified: true,
+                  ),
+                  0,
+                ),
+              ),
             ),
           )
           .onTap,

@@ -72,6 +72,9 @@ class ListeningReport {
   final List<ListeningRank> albumRanks;
 }
 
+String recentHistoryItemKey(PlaybackHistoryEvent event, int index) =>
+    'recent-history-item-${event.path}-${event.startedAt.microsecondsSinceEpoch}-$index';
+
 ListeningReport buildListeningReport(
   Iterable<PlaybackHistoryEvent> events,
   ReportPeriod period,

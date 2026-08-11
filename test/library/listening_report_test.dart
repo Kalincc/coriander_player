@@ -69,6 +69,16 @@ void main() {
     expect(period.end, DateTime.utc(2026, 8, 5, 14, 30, 0, 0, 1));
   });
 
+  test('creates unique recent-history keys for repeated song events', () {
+    final repeated = event(
+      'D:/music/repeated.flac',
+      DateTime.utc(2026, 8, 5, 14, 30),
+    );
+
+    expect(recentHistoryItemKey(repeated, 0),
+        isNot(recentHistoryItemKey(repeated, 1)));
+  });
+
   test('aggregates the top ten ranks by plays then duration then name', () {
     final metadata = <String, Audio>{};
     final events = <PlaybackHistoryEvent>[];
