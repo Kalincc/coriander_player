@@ -31,18 +31,10 @@ Stream<IndexActionState> buildIndexFromFoldersRecursively(
         folders: folders, indexPath: indexPath);
 
 /// for Flutter
-/// 读取 index_path/index.json，检查更新。不可能重新读取被修改的文件夹下所有的音乐标签，这样太耗时。
+/// 读取 index_path/index.json，递归扫描已配置目录。
 ///
-/// [LOWEST_VERSION] 指定可以继承的 index 的最低版本。
-/// 如果 index version < [LOWEST_VERSION] 或者是 index 根本没有 version 再或者格式不符合要求，就转到
-/// [_update_index_below_1_1_0] 更新 index；
-/// 如果 index version >= [LOWEST_VERSION] 则进行更新。
-///
-/// 如果文件夹不存在，删除记录。
-/// 如果文件夹被修改（再次读取到的 modified > 记录的 modified），就更新它。没有则跳过它
-/// 1. 遍历该文件夹索引，判断文件是否存在，不存在则删除记录
-/// 2. 遍历该文件夹索引，如果文件被修改（再次读取到的 modified > 记录的 modified），重新读取标签；没有则跳过它
-/// 3. 遍历该文件夹，添加新增（读取到的 created > 记录的 latest）的音乐文件
+/// 文件以规范化绝对路径匹配。新增、删除、修改时间或大小变化的文件会更新索引；
+/// 未变化文件保留既有标签。写入通过临时文件替换，以便扫描失败时保留原索引。
 Stream<IndexActionState> updateIndex({required String indexPath}) =>
     RustLib.instance.api.crateApiTagReaderUpdateIndex(indexPath: indexPath);
 

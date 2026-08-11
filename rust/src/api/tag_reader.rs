@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashMap, HashSet},
     fs::{self},
     io::{self, Cursor, Write},
     path::{Path, PathBuf},
@@ -103,6 +103,7 @@ impl Audio {
             "path": self.path,
             "modified": self.modified,
             "created": self.created,
+            "size": fs::metadata(&self.path).map(|metadata| metadata.len()).unwrap_or(0),
             "by": self.by
         })
     }
@@ -602,14 +603,19 @@ pub fn build_index_from_folders_recursively(
     for item in &audio_folders {
         audio_folders_json.push(item.to_json_value());
     }
+    let normalized_roots: Vec<String> = folders
+        .iter()
+        .filter_map(|folder| normalize_index_path(Path::new(folder)).ok())
+        .collect();
     let json_value = serde_json::json!({
         "version": 110,
+        "roots": normalized_roots,
         "folders": audio_folders_json,
     });
 
     let mut index_path = PathBuf::from(index_path);
     index_path.push("index.json");
-    fs::File::create(index_path)?.write_all(json_value.to_string().as_bytes())?;
+    write_index_atomically(&index_path, &json_value)?;
 
     Ok(())
 }
@@ -661,7 +667,7 @@ fn _update_index_below_1_1_0(
 /// 1. 遍历该文件夹索引，判断文件是否存在，不存在则删除记录
 /// 2. 遍历该文件夹索引，如果文件被修改（再次读取到的 modified > 记录的 modified），重新读取标签；没有则跳过它
 /// 3. 遍历该文件夹，添加新增（读取到的 created > 记录的 latest）的音乐文件
-pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> anyhow::Result<()> {
+fn legacy_update_index(index_path: String, sink: StreamSink<IndexActionState>) -> anyhow::Result<()> {
     let mut index_path = PathBuf::from(index_path);
     index_path.push("index.json");
     let index = fs::read(&index_path)?;
@@ -796,4 +802,368 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
     fs::File::create(index_path)?.write_all(index.to_string().as_bytes())?;
 
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileFingerprint {
+    modified: u64,
+    size: u64,
+}
+
+impl FileFingerprint {
+    fn from_path(path: &Path) -> io::Result<Self> {
+        let metadata = fs::metadata(path)?;
+        Ok(Self {
+            modified: metadata
+                .modified()?
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::ZERO)
+                .as_secs(),
+            size: metadata.len(),
+        })
+    }
+}
+
+#[derive(Default)]
+struct PathChanges {
+    added: Vec<String>,
+    removed: Vec<String>,
+    modified: Vec<String>,
+    unchanged: Vec<String>,
+}
+
+fn normalize_index_path(path: &Path) -> io::Result<String> {
+    let absolute = fs::canonicalize(path).or_else(|_| {
+        if path.is_absolute() {
+            Ok(path.to_path_buf())
+        } else {
+            std::env::current_dir().map(|current| current.join(path))
+        }
+    })?;
+    let value = absolute.to_string_lossy().to_string();
+    Ok(if cfg!(windows) {
+        value.to_ascii_lowercase()
+    } else {
+        value
+    })
+}
+
+fn is_supported_audio_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| SUPPORT_FORMAT.contains_key(&extension.to_ascii_lowercase()))
+        .unwrap_or(false)
+}
+
+fn scan_audio_paths(roots: &[PathBuf]) -> io::Result<BTreeMap<String, PathBuf>> {
+    let mut scanned = BTreeMap::new();
+    let mut visited = HashSet::new();
+    for root in roots {
+        scan_directory_recursively(root, &mut visited, &mut scanned)?;
+    }
+    Ok(scanned)
+}
+
+fn scan_directory_recursively(
+    directory: &Path,
+    visited: &mut HashSet<String>,
+    scanned: &mut BTreeMap<String, PathBuf>,
+) -> io::Result<()> {
+    let normalized = match normalize_index_path(directory) {
+        Ok(path) => path,
+        Err(error) => {
+            log_to_dart(format!("{:?}: {}", directory, error));
+            return Ok(());
+        }
+    };
+    if !visited.insert(normalized) {
+        return Ok(());
+    }
+
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) => {
+            log_to_dart(format!("{:?}: {}", directory, error));
+            return Ok(());
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(file_type) if file_type.is_dir() => {
+                scan_directory_recursively(&path, visited, scanned)?;
+            }
+            Ok(file_type) if file_type.is_file() && is_supported_audio_path(&path) => {
+                if let Ok(normalized) = normalize_index_path(&path) {
+                    scanned.insert(normalized, path);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn classify_path_changes(
+    scanned: &BTreeMap<String, PathBuf>,
+    existing: &HashMap<String, FileFingerprint>,
+) -> PathChanges {
+    let mut changes = PathChanges::default();
+    for (path, disk_path) in scanned {
+        match existing.get(path) {
+            None => changes.added.push(path.clone()),
+            Some(existing_fingerprint) => match FileFingerprint::from_path(disk_path) {
+                Ok(fingerprint) if fingerprint == *existing_fingerprint => {
+                    changes.unchanged.push(path.clone())
+                }
+                Ok(_) | Err(_) => changes.modified.push(path.clone()),
+            },
+        }
+    }
+    for path in existing.keys() {
+        if !scanned.contains_key(path) {
+            changes.removed.push(path.clone());
+        }
+    }
+    changes
+}
+
+fn roots_from_index(index: &serde_json::Value) -> Vec<PathBuf> {
+    let configured = index["roots"].as_array().into_iter().flatten();
+    let roots: Vec<PathBuf> = configured
+        .filter_map(|value| value.as_str())
+        .map(PathBuf::from)
+        .collect();
+    if !roots.is_empty() {
+        return roots;
+    }
+    if let Some(folders) = index.as_array() {
+        return folders
+            .iter()
+            .filter_map(|folder| folder["path"].as_str())
+            .map(PathBuf::from)
+            .collect();
+    }
+    index["folders"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|folder| folder["path"].as_str())
+        .map(PathBuf::from)
+        .collect()
+}
+
+fn existing_audio_records(index: &serde_json::Value) -> HashMap<String, serde_json::Value> {
+    let mut records = HashMap::new();
+    for folder in index["folders"].as_array().into_iter().flatten() {
+        for audio in folder["audios"].as_array().into_iter().flatten() {
+            let Some(path) = audio["path"].as_str() else {
+                continue;
+            };
+            if let Ok(normalized) = normalize_index_path(Path::new(path)) {
+                records.entry(normalized).or_insert_with(|| audio.clone());
+            }
+        }
+    }
+    records
+}
+
+fn existing_fingerprints(
+    records: &HashMap<String, serde_json::Value>,
+) -> HashMap<String, FileFingerprint> {
+    records
+        .iter()
+        .filter_map(|(path, audio)| {
+            Some((
+                path.clone(),
+                FileFingerprint {
+                    modified: audio["modified"].as_u64()?,
+                    size: audio["size"].as_u64()?,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn build_incremental_index(
+    roots: &[PathBuf],
+    existing_index: &serde_json::Value,
+    sink: &StreamSink<IndexActionState>,
+) -> io::Result<serde_json::Value> {
+    for root in roots {
+        let _ = sink.add(IndexActionState {
+            progress: 0.0,
+            message: String::from("正在扫描 ") + &root.to_string_lossy(),
+        });
+    }
+    let scanned = scan_audio_paths(roots)?;
+    let existing = existing_audio_records(existing_index);
+    let fingerprints = existing_fingerprints(&existing);
+    let changes = classify_path_changes(&scanned, &fingerprints);
+    let changed: HashSet<&str> = changes
+        .added
+        .iter()
+        .chain(changes.modified.iter())
+        .map(String::as_str)
+        .collect();
+    let total = scanned.len().max(1);
+    let mut folders: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
+
+    for (index, (normalized, disk_path)) in scanned.iter().enumerate() {
+        let _ = sink.add(IndexActionState {
+            progress: index as f64 / total as f64,
+            message: String::from("正在更新 ") + &disk_path.to_string_lossy(),
+        });
+        let value = if changed.contains(normalized.as_str()) {
+            Audio::read_from_path(disk_path).map(|audio| {
+                let mut value = audio.to_json_value();
+                if let Ok(fingerprint) = FileFingerprint::from_path(disk_path) {
+                    value["size"] = serde_json::json!(fingerprint.size);
+                }
+                value
+            })
+        } else {
+            existing.get(normalized).cloned()
+        }
+        .or_else(|| existing.get(normalized).cloned());
+
+        if let Some(value) = value {
+            if let Some(parent) = disk_path.parent() {
+                let parent_path = normalize_index_path(parent)?;
+                folders.entry(parent_path).or_default().push(value);
+            }
+        }
+    }
+
+    let folders_json: Vec<serde_json::Value> = folders
+        .into_iter()
+        .map(|(path, audios)| {
+            let metadata = fs::metadata(&path).ok();
+            let modified = metadata
+                .as_ref()
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .unwrap_or(Duration::ZERO)
+                .as_secs();
+            let latest = audios
+                .iter()
+                .filter_map(|audio| audio["created"].as_u64())
+                .max()
+                .unwrap_or(0);
+            serde_json::json!({
+                "path": path,
+                "modified": modified,
+                "latest": latest,
+                "audios": audios,
+            })
+        })
+        .collect();
+    let normalized_roots: Vec<String> = roots
+        .iter()
+        .filter_map(|root| normalize_index_path(root).ok())
+        .collect();
+    let _ = sink.add(IndexActionState {
+        progress: 1.0,
+        message: String::new(),
+    });
+    Ok(serde_json::json!({
+        "version": 110,
+        "roots": normalized_roots,
+        "folders": folders_json,
+    }))
+}
+
+fn write_index_atomically(index_path: &Path, value: &serde_json::Value) -> io::Result<()> {
+    let parent = index_path.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "index path has no parent")
+    })?;
+    fs::create_dir_all(parent)?;
+    let temporary = index_path.with_extension("json.tmp");
+    let backup = index_path.with_extension("json.bak");
+    fs::File::create(&temporary)?.write_all(value.to_string().as_bytes())?;
+
+    let moved_current = if index_path.exists() {
+        if backup.exists() {
+            fs::remove_file(&backup)?;
+        }
+        fs::rename(index_path, &backup)?;
+        true
+    } else {
+        false
+    };
+    if let Err(error) = fs::rename(&temporary, index_path) {
+        if moved_current && backup.exists() {
+            let _ = fs::remove_file(index_path);
+            let _ = fs::rename(&backup, index_path);
+        }
+        return Err(error);
+    }
+    if moved_current && backup.exists() {
+        let _ = fs::remove_file(backup);
+    }
+    Ok(())
+}
+
+/// for Flutter
+/// 读取既有索引，递归扫描配置目录，并仅重新读取新增或变更文件的标签。
+pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> anyhow::Result<()> {
+    let index_path = PathBuf::from(index_path).join("index.json");
+    let bytes = fs::read(&index_path)?;
+    let existing_index: serde_json::Value = serde_json::from_slice(&bytes)?;
+    if !existing_index.is_object() && !existing_index.is_array() {
+        return Err(anyhow::anyhow!("invalid index JSON"));
+    }
+    let roots = roots_from_index(&existing_index);
+    let updated_index = build_incremental_index(&roots, &existing_index, &sink)?;
+    write_index_atomically(&index_path, &updated_index)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_recursive_path_changes() {
+        let root = std::env::temp_dir().join(format!(
+            "coriander-tag-reader-{}",
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        let unchanged = root.join("unchanged.mp3");
+        let modified = nested.join("modified.mp3");
+        let added = nested.join("added.mp3");
+        fs::write(&unchanged, b"same").unwrap();
+        fs::write(&modified, b"old").unwrap();
+
+        let mut existing = std::collections::HashMap::new();
+        existing.insert(
+            normalize_index_path(&unchanged).unwrap(),
+            FileFingerprint::from_path(&unchanged).unwrap(),
+        );
+        existing.insert(
+            normalize_index_path(&modified).unwrap(),
+            FileFingerprint::from_path(&modified).unwrap(),
+        );
+        existing.insert(
+            normalize_index_path(&root.join("removed.mp3")).unwrap(),
+            FileFingerprint { modified: 1, size: 1 },
+        );
+
+        fs::write(&modified, b"changed-size").unwrap();
+        fs::write(&added, b"new").unwrap();
+        let scanned = scan_audio_paths(&[root.clone()]).unwrap();
+        let changes = classify_path_changes(&scanned, &existing);
+
+        assert_eq!(changes.added.len(), 1);
+        assert_eq!(changes.modified.len(), 1);
+        assert_eq!(changes.removed.len(), 1);
+        assert!(changes.unchanged.contains(&normalize_index_path(&unchanged).unwrap()));
+
+        fs::remove_dir_all(root).unwrap();
+    }
 }

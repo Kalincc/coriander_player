@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/component/build_index_state_view.dart';
 import 'package:coriander_player/component/settings_tile.dart';
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/library_update_coordinator.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/library/playlist.dart';
 import 'package:coriander_player/lyric/lyric_source.dart';
+import 'package:coriander_player/play_service/play_service.dart';
+import 'package:coriander_player/src/rust/api/tag_reader.dart';
 import 'package:filepicker_windows/filepicker_windows.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -91,6 +96,47 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
   final applicationSupportDirectory = getAppDataDir();
 
   bool editing = true;
+  LibraryUpdateCoordinator? _coordinator;
+
+  LibraryUpdateCoordinator _createCoordinator(
+    String indexPath, {
+    Future<Stream<IndexActionState>> Function()? scan,
+  }) =>
+      LibraryUpdateCoordinator(
+        scan: scan ?? () async => updateIndex(indexPath: indexPath),
+        reloadLibrary: AudioLibrary.initFromIndex,
+        reconcileAppData: () async {
+          await readPlaylists();
+          await readLyricSources();
+          await PlayService.instance
+              .initializePlaybackData(AudioLibrary.instance.audioCollection);
+        },
+        refreshLyrics: LyricSearchIndex.instance.refreshCurrentLibrary,
+      );
+
+  Future<void> _scanNow() async {
+    final directory = await applicationSupportDirectory;
+    final coordinator = _createCoordinator(directory.path);
+    coordinator.addListener(_onProgressChanged);
+    setState(() => _coordinator = coordinator);
+    try {
+      await coordinator.update();
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      // The coordinator keeps the scan error visible and leaves current data intact.
+    }
+  }
+
+  void _onProgressChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _coordinator?.removeListener(_onProgressChanged);
+    _coordinator?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -154,13 +200,12 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
                                 indexPath: snapshot.data!,
                                 folders: folders,
                                 whenIndexBuilt: () async {
-                                  await Future.wait([
-                                    AudioLibrary.initFromIndex(),
-                                    readPlaylists(),
-                                    readLyricSources(),
-                                  ]);
-                                  await LyricSearchIndex.instance
-                                      .refreshCurrentLibrary();
+                                  final coordinator = _createCoordinator(
+                                    snapshot.data!.path,
+                                    scan: () async =>
+                                        const Stream<IndexActionState>.empty(),
+                                  );
+                                  await coordinator.update();
                                   if (context.mounted) {
                                     Navigator.pop(context);
                                   }
@@ -172,6 +217,22 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
                 ),
               ),
               const SizedBox(height: 16.0),
+              if (_coordinator != null) ...[
+                LinearProgressIndicator(
+                  value: _coordinator!.progress.action?.progress,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _coordinator!.progress.error?.toString() ??
+                      (_coordinator!.progress.action?.message ?? ''),
+                  style: TextStyle(
+                    color: _coordinator!.progress.error == null
+                        ? scheme.onSurface
+                        : scheme.error,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -190,6 +251,14 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
                     child: const Text("添加"),
                   ),
                   const SizedBox(width: 8.0),
+                  if (editing)
+                    TextButton(
+                      onPressed: _coordinator?.progress.isUpdating == true
+                          ? null
+                          : _scanNow,
+                      child: const Text("立即扫描"),
+                    ),
+                  if (editing) const SizedBox(width: 8.0),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     child: const Text("取消"),
