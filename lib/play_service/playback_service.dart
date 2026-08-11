@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/play_service/play_service.dart';
+import 'package:coriander_player/play_service/playback_history_service.dart';
 import 'package:coriander_player/play_service/playback_queue_service.dart';
 import 'package:coriander_player/src/bass/bass_player.dart';
 import 'package:coriander_player/src/rust/api/smtc_flutter.dart';
@@ -37,11 +38,12 @@ class PlaybackService extends ChangeNotifier {
 
   late StreamSubscription _playerStateStreamSub;
   late StreamSubscription _smtcEventStreamSub;
+  late StreamSubscription _positionStreamSub;
 
   PlaybackService(this.playService) {
     _playerStateStreamSub = playerStateStream.listen((event) {
       if (event == PlayerState.completed) {
-        _autoNextAudio();
+        unawaited(_endHistorySession().whenComplete(_autoNextAudio));
       }
     });
 
@@ -63,8 +65,13 @@ class PlaybackService extends ChangeNotifier {
       }
     });
 
-    positionStream.listen((progress) {
+    _positionStreamSub = positionStream.listen((progress) {
       _smtc.updateTimeProperties(progress: (progress * 1000).floor());
+      if (nowPlaying != null && playerState != PlayerState.unknown) {
+        _playbackHistoryService?.recordPosition(
+          Duration(milliseconds: (progress * 1000).round()),
+        );
+      }
     });
   }
 
@@ -86,6 +93,31 @@ class PlaybackService extends ChangeNotifier {
 
   PlaybackQueueService? _playbackQueueService;
   PlaybackQueueService? get playbackQueueService => _playbackQueueService;
+
+  PlaybackHistoryService? _playbackHistoryService;
+  PlaybackHistoryService? get playbackHistoryService => _playbackHistoryService;
+
+  void attachHistory(PlaybackHistoryService historyService) {
+    _playbackHistoryService = historyService;
+  }
+
+  Future<void> _endHistorySession() async {
+    final historyService = _playbackHistoryService;
+    if (historyService == null) return;
+    try {
+      await historyService.endSession();
+    } catch (err, trace) {
+      LOGGER.e('[playback history] $err', stackTrace: trace);
+    }
+  }
+
+  void _startHistorySession(Audio audio,
+      {Duration initialPosition = Duration.zero}) {
+    _playbackHistoryService?.startSession(
+      audio,
+      initialPosition: initialPosition,
+    );
+  }
 
   int? _playlistIndex;
   int get playlistIndex => _playlistIndex ?? 0;
@@ -183,20 +215,28 @@ class PlaybackService extends ChangeNotifier {
   /// 4. 获取歌词 **将 [_nextLyricLine] 置为0**
   /// 5. 播放
   /// 6. 通知并更新主题色
-  void _loadAndPlay(int audioIndex, List<Audio> playlist) {
+  Future<void> _loadAndPlay(
+    int audioIndex,
+    List<Audio> playlist, {
+    Duration initialPosition = Duration.zero,
+  }) async {
+    if (audioIndex < 0 || audioIndex >= playlist.length) return;
+    final audio = playlist[audioIndex];
     try {
+      await _endHistorySession();
+      _player.setSource(audio.path);
       _playlistIndex = audioIndex;
-      nowPlaying = playlist[audioIndex];
+      nowPlaying = audio;
       _persistQueue(_playbackQueueService?.setCurrent(
         audio: nowPlaying,
-        position: Duration.zero,
+        position: initialPosition,
       ));
-      _player.setSource(nowPlaying!.path);
       setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
 
       playService.lyricService.updateLyric();
 
       _player.start();
+      _startHistorySession(audio, initialPosition: initialPosition);
       notifyListeners();
       ThemeProvider.instance.applyThemeFromAudio(nowPlaying!);
 
@@ -224,7 +264,7 @@ class PlaybackService extends ChangeNotifier {
 
   /// 播放当前播放列表的第几项，只能用在播放列表界面
   void playIndexOfPlaylist(int audioIndex) {
-    _loadAndPlay(audioIndex, playlist.value);
+    unawaited(_loadAndPlay(audioIndex, playlist.value));
   }
 
   /// 播放playlist[audioIndex]并设置播放列表为playlist
@@ -236,13 +276,13 @@ class PlaybackService extends ChangeNotifier {
       shuffled.insert(0, willPlay);
       _playlistBackup = List.from(playlist);
       _setQueue(shuffled, current: willPlay);
-      _loadAndPlay(0, shuffled);
+      unawaited(_loadAndPlay(0, shuffled));
     } else {
       final queue = List<Audio>.from(playlist);
       final willPlay = queue[audioIndex];
       _playlistBackup = List.from(playlist);
       _setQueue(queue, current: willPlay);
-      _loadAndPlay(audioIndex, queue);
+      unawaited(_loadAndPlay(audioIndex, queue));
     }
   }
 
@@ -254,7 +294,7 @@ class PlaybackService extends ChangeNotifier {
 
     if (shuffled.isEmpty) return;
     _setQueue(shuffled, current: shuffled.first);
-    _loadAndPlay(0, shuffled);
+    unawaited(_loadAndPlay(0, shuffled));
   }
 
   /// 下一首播放
@@ -298,7 +338,7 @@ class PlaybackService extends ChangeNotifier {
     if (_playlistIndex == null) return;
 
     if (_playlistIndex! < playlist.value.length - 1) {
-      _loadAndPlay(_playlistIndex! + 1, playlist.value);
+      unawaited(_loadAndPlay(_playlistIndex! + 1, playlist.value));
     }
   }
 
@@ -310,13 +350,13 @@ class PlaybackService extends ChangeNotifier {
       newIndex = 0;
     }
 
-    _loadAndPlay(newIndex, playlist.value);
+    unawaited(_loadAndPlay(newIndex, playlist.value));
   }
 
   void _nextAudio_singleLoop() {
     if (_playlistIndex == null) return;
 
-    _loadAndPlay(_playlistIndex!, playlist.value);
+    unawaited(_loadAndPlay(_playlistIndex!, playlist.value));
   }
 
   void _autoNextAudio() {
@@ -345,7 +385,7 @@ class PlaybackService extends ChangeNotifier {
       newIndex = playlist.value.length - 1;
     }
 
-    _loadAndPlay(newIndex, playlist.value);
+    unawaited(_loadAndPlay(newIndex, playlist.value));
   }
 
   /// 暂停
@@ -353,6 +393,10 @@ class PlaybackService extends ChangeNotifier {
     try {
       _player.pause();
       _saveQueuePosition();
+      _playbackHistoryService?.recordPosition(
+        Duration(milliseconds: (_player.position * 1000).round()),
+      );
+      unawaited(_endHistorySession());
       _smtc.updateState(state: SMTCState.paused);
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
@@ -372,13 +416,19 @@ class PlaybackService extends ChangeNotifier {
           nowPlaying != null &&
           _playlistIndex != null) {
         final position = _playbackQueueService?.savedPosition ?? Duration.zero;
-        _loadAndPlay(_playlistIndex!, playlist.value);
-        if (position > Duration.zero) {
-          _player.seek(position.inMilliseconds / 1000);
-        }
+        unawaited(_resumeFromSavedState(position));
         return;
       }
+      final wasPlaying = _player.playerState == PlayerState.playing;
       _player.start();
+      final audio = nowPlaying;
+      if (!wasPlaying && audio != null) {
+        _startHistorySession(
+          audio,
+          initialPosition:
+              Duration(milliseconds: (_player.position * 1000).round()),
+        );
+      }
       _smtc.updateState(state: SMTCState.playing);
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
@@ -388,6 +438,15 @@ class PlaybackService extends ChangeNotifier {
     } catch (err) {
       LOGGER.e("[start]: $err");
       showTextOnSnackBar(err.toString());
+    }
+  }
+
+  Future<void> _resumeFromSavedState(Duration position) async {
+    final index = _playlistIndex;
+    if (index == null) return;
+    await _loadAndPlay(index, playlist.value, initialPosition: position);
+    if (position > Duration.zero && nowPlaying != null) {
+      _player.seek(position.inMilliseconds / 1000);
     }
   }
 
@@ -402,8 +461,13 @@ class PlaybackService extends ChangeNotifier {
 
   void close() {
     _saveQueuePosition();
+    _playbackHistoryService?.recordPosition(
+      Duration(milliseconds: (_player.position * 1000).round()),
+    );
+    unawaited(_endHistorySession());
     _playerStateStreamSub.cancel();
     _smtcEventStreamSub.cancel();
+    _positionStreamSub.cancel();
     _playbackQueueService?.removeListener(_syncPlaylistFromQueue);
     _player.free();
     _smtc.close();

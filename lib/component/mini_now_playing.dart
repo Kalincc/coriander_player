@@ -1,4 +1,5 @@
 import 'package:coriander_player/component/rectangle_progress_indicator.dart';
+import 'package:coriander_player/component/now_playing_favorite_button.dart';
 import 'package:coriander_player/component/responsive_builder.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:coriander_player/src/bass/bass_player.dart';
@@ -133,6 +134,8 @@ class _NowPlayingForeground extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8.0),
+
+                  NowPlayingFavoriteButton(audio: nowPlaying),
 
                   /// start or pause
                   StreamBuilder(

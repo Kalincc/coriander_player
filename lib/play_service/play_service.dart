@@ -41,6 +41,7 @@ class PlayService {
     final historyService = await _playbackHistoryService;
     await historyService.load();
     _loadedPlaybackHistoryService = historyService;
+    playbackService.attachHistory(historyService);
   }
 
   Future<PlaybackQueueService> _createPlaybackQueueService() async {

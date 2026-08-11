@@ -98,7 +98,7 @@ class _NowPlayingPage_SmallState extends State<_NowPlayingPage_Small> {
           const SizedBox(height: 8.0),
           const _NowPlayingMainControls(),
           const SizedBox(height: 8.0),
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _NowPlayingShuffleSwitch(),
@@ -106,6 +106,12 @@ class _NowPlayingPage_SmallState extends State<_NowPlayingPage_Small> {
               _NowPlayingVolDspSlider(),
               _ExclusiveModeSwitch(),
               _DesktopLyricSwitch(),
+              ListenableBuilder(
+                listenable: PlayService.instance.playbackService,
+                builder: (context, _) => NowPlayingFavoriteButton(
+                  audio: PlayService.instance.playbackService.nowPlaying,
+                ),
+              ),
               _NowPlayingMoreAction(),
             ],
           )

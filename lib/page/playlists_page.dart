@@ -64,20 +64,22 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              tooltip: "编辑",
-              onPressed: () => editPlaylist(context, PLAYLISTS[i]),
-              icon: const Icon(Symbols.edit),
-            ),
-            const SizedBox(width: 8.0),
-            IconButton(
-              tooltip: "删除",
-              onPressed: () => setState(() {
-                PLAYLISTS.remove(PLAYLISTS[i]);
-              }),
-              color: scheme.error,
-              icon: const Icon(Symbols.delete),
-            ),
+            if (!PLAYLISTS[i].isSystem) ...[
+              IconButton(
+                tooltip: "编辑",
+                onPressed: () => editPlaylist(context, PLAYLISTS[i]),
+                icon: const Icon(Symbols.edit),
+              ),
+              const SizedBox(width: 8.0),
+              IconButton(
+                tooltip: "删除",
+                onPressed: () => setState(() {
+                  removePlaylist(PLAYLISTS[i]);
+                }),
+                color: scheme.error,
+                icon: const Icon(Symbols.delete),
+              ),
+            ],
           ],
         ),
         shape: RoundedRectangleBorder(

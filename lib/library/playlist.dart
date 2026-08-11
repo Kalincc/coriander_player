@@ -4,12 +4,14 @@ import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/local_json_store.dart';
 import 'package:coriander_player/utils.dart';
+import 'package:flutter/foundation.dart';
 
 const likedPlaylistName = '我喜欢';
 const _playlistsFileName = 'playlists.json';
 const _playlistsVersion = 1;
 
 List<Playlist> PLAYLISTS = [];
+final playlistRevision = ValueNotifier(0);
 
 Future<void> readPlaylists({LocalJsonStore? store}) async {
   final localStore = store ?? await _defaultStore();
@@ -36,6 +38,7 @@ Future<void> readPlaylists({LocalJsonStore? store}) async {
   if (shouldSave) {
     await savePlaylists(store: localStore);
   }
+  playlistRevision.value++;
 }
 
 Future<void> savePlaylists({LocalJsonStore? store}) async {
@@ -74,6 +77,7 @@ Future<void> toggleLiked(Audio audio, {LocalJsonStore? store}) async {
     liked.audios[audio.path] = audio;
   }
   await savePlaylists(store: store);
+  playlistRevision.value++;
 }
 
 bool removePlaylist(Playlist playlist) {

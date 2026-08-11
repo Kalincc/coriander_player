@@ -35,7 +35,7 @@ class _NowPlayingPage_Large extends StatelessWidget {
           ),
           const SizedBox(height: 16.0),
           const _NowPlayingSlider(),
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(horizontal: 24),
             child: Stack(
               alignment: Alignment.center,
@@ -62,6 +62,14 @@ class _NowPlayingPage_Large extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _NowPlayingLargeViewSwitch(),
+                      spacer,
+                      ListenableBuilder(
+                        listenable: PlayService.instance.playbackService,
+                        builder: (context, _) => NowPlayingFavoriteButton(
+                          audio:
+                              PlayService.instance.playbackService.nowPlaying,
+                        ),
+                      ),
                       spacer,
                       _DesktopLyricSwitch(),
                       spacer,

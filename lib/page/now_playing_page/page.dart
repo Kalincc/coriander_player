@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/component/title_bar.dart';
+import 'package:coriander_player/component/now_playing_favorite_button.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/component/responsive_builder.dart';
