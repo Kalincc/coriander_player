@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/component/build_index_state_view.dart';
 import 'package:coriander_player/library/audio_library.dart';
@@ -55,7 +57,12 @@ class WelcomingPage extends StatelessWidget {
 }
 
 class FolderSelectorView extends StatefulWidget {
-  const FolderSelectorView({super.key});
+  const FolderSelectorView({
+    super.key,
+    this.applicationSupportDirectory,
+  });
+
+  final Future<Directory>? applicationSupportDirectory;
 
   @override
   State<FolderSelectorView> createState() => _FolderSelectorViewState();
@@ -64,7 +71,14 @@ class FolderSelectorView extends StatefulWidget {
 class _FolderSelectorViewState extends State<FolderSelectorView> {
   bool selecting = true;
   final List<String> folders = [];
-  final applicationSupportDirectory = getAppDataDir();
+  late final Future<Directory> applicationSupportDirectory;
+
+  @override
+  void initState() {
+    super.initState();
+    applicationSupportDirectory =
+        widget.applicationSupportDirectory ?? getAppDataDir();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -134,15 +148,26 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
               child: const Text("添加文件夹"),
             ),
             FilledButton(
-              onPressed: () {
-                setState(() {
-                  selecting = false;
-                });
-              },
+              key: const Key('first-library-scan-button'),
+              onPressed: folders.isEmpty
+                  ? null
+                  : () {
+                      setState(() {
+                        selecting = false;
+                      });
+                    },
               child: const Text("扫描"),
             ),
           ],
         ),
+        if (folders.isEmpty) ...[
+          const SizedBox(height: 8.0),
+          Text(
+            '请先添加至少一个音乐文件夹。',
+            key: const Key('first-library-folder-hint'),
+            style: TextStyle(color: scheme.error),
+          ),
+        ],
         const SizedBox(height: 16.0),
         Expanded(
           child: ListView.builder(

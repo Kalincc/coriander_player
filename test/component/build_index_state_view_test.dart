@@ -36,4 +36,25 @@ void main() {
     expect(completed, 0);
     expect(find.textContaining('索引创建失败'), findsOneWidget);
   });
+
+  testWidgets('shows an asynchronous completion failure', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BuildIndexStateView(
+          indexPath: directory,
+          folders: const ['D:/Music'],
+          whenIndexBuilt: () async {
+            throw StateError('reload failed');
+          },
+          buildIndex: ({required folders, required indexPath}) =>
+              const Stream<IndexActionState>.empty(),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining('reload failed'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

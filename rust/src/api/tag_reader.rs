@@ -103,7 +103,6 @@ impl Audio {
             "path": self.path,
             "modified": self.modified,
             "created": self.created,
-            "size": fs::metadata(&self.path).map(|metadata| metadata.len()).unwrap_or(0),
             "by": self.by
         })
     }
@@ -582,41 +581,56 @@ pub fn build_index_from_folders_recursively(
     index_path: String,
     sink: StreamSink<IndexActionState>,
 ) -> Result<(), io::Error> {
-    let mut audio_folders: Vec<AudioFolder> = vec![];
-    let mut scaned: u64 = 0;
-    let mut total: u64 = folders.len() as u64;
-    let mut scaned_folders: HashSet<String> = HashSet::new();
+    with_valid_scan_roots(&folders, || {
+        let mut audio_folders: Vec<AudioFolder> = vec![];
+        let mut scaned: u64 = 0;
+        let mut total: u64 = folders.len() as u64;
+        let mut scaned_folders: HashSet<String> = HashSet::new();
 
-    for item in &folders {
-        AudioFolder::read_from_folder_recursively(
-            Path::new(item),
-            &mut audio_folders,
-            &mut scaned,
-            &mut total,
-            &mut scaned_folders,
-            &sink,
-        )?;
+        for item in &folders {
+            AudioFolder::read_from_folder_recursively(
+                Path::new(item),
+                &mut audio_folders,
+                &mut scaned,
+                &mut total,
+                &mut scaned_folders,
+                &sink,
+            )?;
+        }
+
+        let mut audio_folders_json: Vec<serde_json::Value> = vec![];
+        for item in &audio_folders {
+            audio_folders_json.push(item.to_json_value());
+        }
+        let normalized_roots: Vec<String> = folders
+            .iter()
+            .filter_map(|folder| normalize_index_path(Path::new(folder)).ok())
+            .collect();
+        let json_value = serde_json::json!({
+            "version": 110,
+            "roots": normalized_roots,
+            "folders": audio_folders_json,
+        });
+
+        let mut index_path = PathBuf::from(index_path);
+        index_path.push("index.json");
+        write_index_atomically(&index_path, &json_value)?;
+
+        Ok(())
+    })
+}
+
+fn with_valid_scan_roots<T>(
+    folders: &[String],
+    build: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
+    if folders.is_empty() || folders.iter().any(|folder| folder.trim().is_empty()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "at least one non-empty scan root is required",
+        ));
     }
-
-    let mut audio_folders_json: Vec<serde_json::Value> = vec![];
-    for item in &audio_folders {
-        audio_folders_json.push(item.to_json_value());
-    }
-    let normalized_roots: Vec<String> = folders
-        .iter()
-        .filter_map(|folder| normalize_index_path(Path::new(folder)).ok())
-        .collect();
-    let json_value = serde_json::json!({
-        "version": 110,
-        "roots": normalized_roots,
-        "folders": audio_folders_json,
-    });
-
-    let mut index_path = PathBuf::from(index_path);
-    index_path.push("index.json");
-    write_index_atomically(&index_path, &json_value)?;
-
-    Ok(())
+    build()
 }
 
 fn normalize_index_path(path: &Path) -> io::Result<String> {
@@ -687,4 +701,34 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
     }
     build_index_from_folders_recursively(roots, index_path, sink)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_scan_roots_are_rejected_before_an_existing_index_is_touched() {
+        let directory = std::env::temp_dir().join(format!(
+            "coriander-empty-roots-{}",
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let index_path = directory.join("index.json");
+        let existing = br#"{"version":110,"roots":["D:/Music"],"folders":[]}"#;
+        fs::write(&index_path, existing).unwrap();
+
+        let error = with_valid_scan_roots(&[], || {
+            fs::write(&index_path, b"overwritten")?;
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(fs::read(&index_path).unwrap(), existing);
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

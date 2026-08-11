@@ -20,7 +20,7 @@ class BuildIndexStateView extends StatefulWidget {
 
   final Directory indexPath;
   final List<String> folders;
-  final void Function() whenIndexBuilt;
+  final FutureOr<void> Function() whenIndexBuilt;
   final BuildIndexStream buildIndex;
 
   @override
@@ -53,9 +53,17 @@ class _BuildIndexStateViewState extends State<BuildIndexStateView> {
         _error = error;
         if (mounted) setState(() {});
       },
-      onDone: () {
-        if (!_failed) widget.whenIndexBuilt();
-        _subscription?.cancel();
+      onDone: () async {
+        try {
+          if (!_failed) await widget.whenIndexBuilt();
+        } catch (error, trace) {
+          LOGGER.e('[build index completion] $error', stackTrace: trace);
+          _failed = true;
+          _error = error;
+          if (mounted) setState(() {});
+        } finally {
+          await _subscription?.cancel();
+        }
       },
     );
   }

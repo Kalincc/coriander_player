@@ -80,6 +80,15 @@ class AudioLibrary {
     if (rootsJson != null && rootsJson is! List) {
       throw const FormatException('Invalid library scan roots');
     }
+    final scanRoots = <String>[];
+    if (rootsJson is List) {
+      for (final root in rootsJson) {
+        if (root is! String || root.trim().isEmpty) {
+          throw const FormatException('Invalid library scan root');
+        }
+        scanRoots.add(root);
+      }
+    }
 
     final folders = <AudioFolder>[];
     for (final encodedFolder in foldersJson) {
@@ -98,7 +107,7 @@ class AudioLibrary {
 
     final loaded = AudioLibrary._(
       folders,
-      scanRoots: rootsJson?.whereType<String>() ?? const [],
+      scanRoots: scanRoots,
     ).._buildCollections();
     _instance = loaded;
   }

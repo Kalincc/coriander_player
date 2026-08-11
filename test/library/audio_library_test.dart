@@ -78,6 +78,37 @@ void main() {
     expect(AudioLibrary.instance.audioCollection.single.path,
         'D:/Music/Artist/Album/kept.flac');
   });
+
+  test('rejects malformed root entries without replacing the loaded library',
+      () async {
+    final directory =
+        await Directory.systemTemp.createTemp('coriander_invalid_roots_');
+    addTearDown(() => directory.delete(recursive: true));
+    final indexFile =
+        File('${directory.path}${Platform.pathSeparator}index.json');
+    await indexFile.writeAsString(jsonEncode({
+      'version': 110,
+      'roots': ['D:/Music'],
+      'folders': [
+        _folder('D:/Music/Artist/Album', 'D:/Music/Artist/Album/kept.flac'),
+      ],
+    }));
+    await AudioLibrary.initFromIndex(indexFile: indexFile);
+    await indexFile.writeAsString(jsonEncode({
+      'version': 110,
+      'roots': ['E:/Archive', 42],
+      'folders': <Object>[],
+    }));
+
+    await expectLater(
+      AudioLibrary.initFromIndex(indexFile: indexFile),
+      throwsFormatException,
+    );
+
+    expect(AudioLibrary.instance.scanRoots, ['D:/Music']);
+    expect(AudioLibrary.instance.audioCollection.single.path,
+        'D:/Music/Artist/Album/kept.flac');
+  });
 }
 
 Map<String, Object> _folder(String path, String audioPath) => {
