@@ -84,11 +84,19 @@ ListeningReport buildListeningReport(
     totalListened += event.listened;
     qualifiedPlayCount += 1;
     final audio = metadata[event.path];
+    _add(
+      songs,
+      event.path,
+      audio?.title.trim().isNotEmpty == true ? audio!.title : event.path,
+      event.listened,
+    );
     if (audio == null) continue;
-
-    _add(songs, event.path, audio.title, event.listened);
-    _add(artists, audio.artist, audio.artist, event.listened);
-    _add(albums, audio.album, audio.album, event.listened);
+    if (audio.artist.trim().isNotEmpty) {
+      _add(artists, audio.artist, audio.artist, event.listened);
+    }
+    if (audio.album.trim().isNotEmpty) {
+      _add(albums, audio.album, audio.album, event.listened);
+    }
   }
 
   return ListeningReport(

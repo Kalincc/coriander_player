@@ -23,6 +23,8 @@ const String NOW_PLAYING_PAGE = "/nowplaying";
 const String SETTINGS_PAGE = "/settings";
 const String SETTINGS_ISSUE_PAGE = "/settings/issue";
 
+const String LISTENING_REPORT_PAGE = "/reports";
+
 const String WELCOMING_PAGE = "/welcoming";
 
 const String UPDATING_DIALOG = "/updating";

@@ -20,6 +20,7 @@ final destinations = <DestinationDesc>[
   DestinationDesc(Symbols.album, "专辑", app_paths.ALBUMS_PAGE),
   DestinationDesc(Symbols.folder, "文件夹", app_paths.FOLDERS_PAGE),
   DestinationDesc(Symbols.list, "歌单", app_paths.PLAYLISTS_PAGE),
+  DestinationDesc(Symbols.insights, "听歌报告", app_paths.LISTENING_REPORT_PAGE),
   DestinationDesc(Symbols.search, "搜索", app_paths.SEARCH_PAGE),
   DestinationDesc(Symbols.settings, "设置", app_paths.SETTINGS_PAGE),
 ];
