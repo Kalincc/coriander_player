@@ -44,7 +44,8 @@ void main() {
     expect(coordinator.progress.isUpdating, isFalse);
   });
 
-  test('surfaces a legacy-rebuild error without reconciling app data', () async {
+  test('surfaces a legacy-rebuild error without reconciling app data',
+      () async {
     final calls = <String>[];
     final coordinator = LibraryUpdateCoordinator(
       scan: () async => Stream<IndexActionState>.error(
