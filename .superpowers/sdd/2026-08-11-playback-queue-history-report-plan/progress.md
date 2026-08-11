@@ -31,3 +31,9 @@ Task 6: implementation `0bb98a8` (report page, week/month/12-month choices, Top1
 Task 6: fix round 1 `e7d311f` (focused Top10/period/empty/metadata/UTC/navigation coverage and metadata seam; static checks clean; runner still unavailable).
 Task 6: fix round 2 `11f6eef` (summary value keys/assertions and actual GoRouter detail tap; final 5.6-sol review READY in static scope; Flutter GREEN remains unobserved due runner hang).
 Task 6: complete (`0bb98a8`, `e7d311f`, `11f6eef`; no playback/scanner behavior changes).
+Task 7: implementation `8102fd7` (README persistence/upgrade documentation and queue backup migration coverage; scoped queue 5/5; full/page runners unavailable).
+Task 7: final review found Critical full-rebuild error swallowing, missing recent20 UI, shuffle restore backup gap, reserved liked-name collision, missing queue-tail entry, two stale report test expectations, and two edge cases (duplicate recent keys, rebuild error callback).
+Task 7: fix round 1 `ab39b8c` addressed the first six findings; focused playlist/queue/report checks passed and runner limits were recorded.
+Task 7: fix round 2 `587928e` made recent20 keys unique and guarded rebuild completion on stream errors; final 5.6-sol review READY (`final-rereview2.md`, 17/17 scoped tests, format/analyze/diff clean). Cargo/Rust tests remain unavailable.
+Task 7: complete (`8102fd7`, `ab39b8c`, `587928e`).
+Final branch review: READY in static/scoped scope; no Critical/Important open. Full/page Flutter runner and Cargo remain unverified environmental gates.
