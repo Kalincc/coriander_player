@@ -186,6 +186,67 @@ void main() {
     expect(controller.value.isComplete, isTrue);
   });
 
+  test('publishes lyric batches and cancels an older lyric search', () async {
+    final songs = [
+      for (var i = 0; i < 26; i++)
+        _audio(title: 'song $i', path: '$i.flac', modified: i + 1),
+    ];
+    AudioLibrary.instance.audioCollection.addAll(songs);
+    final index = _index(fingerprint: 1, lines: const []);
+    for (var i = 0; i < songs.length; i++) {
+      index.entries[songs[i].path] = LyricIndexEntry(
+        audioPath: songs[i].path,
+        fingerprint: LyricFileFingerprint(audioModified: songs[i].modified),
+        lines: [
+          LyricSearchLine(
+            startMs: i * 1000,
+            text: i < 25 ? 'older lyric' : 'newer lyric',
+          ),
+        ],
+      );
+    }
+
+    final secondLyricBatch = Completer<void>();
+    final releaseOlderSearch = Completer<void>();
+    var yields = 0;
+    final controller = LocalSearchController(
+      lyricIndex: index,
+      yieldToEventLoop: () {
+        yields++;
+        if (yields == 6) {
+          secondLyricBatch.complete();
+          return releaseOlderSearch.future;
+        }
+        return Future<void>.value();
+      },
+    );
+    addTearDown(controller.dispose);
+
+    final olderSearch = controller.search('older');
+    final reachedSecondLyricBatch = await Future.any<bool>([
+      secondLyricBatch.future.then((_) => true),
+      Future<bool>.delayed(
+        const Duration(milliseconds: 100),
+        () => false,
+      ),
+    ]);
+    expect(reachedSecondLyricBatch, isTrue);
+    if (!reachedSecondLyricBatch) return;
+
+    expect(controller.value.result.lyrics, hasLength(25));
+    expect(controller.value.isLoading, isTrue);
+
+    await controller.search('newer');
+    expect(controller.value.result.lyrics, hasLength(1));
+    expect(controller.value.result.lyrics.single.audio, same(songs.last));
+
+    releaseOlderSearch.complete();
+    await olderSearch;
+
+    expect(controller.value.result.lyrics, hasLength(1));
+    expect(controller.value.result.lyrics.single.audio, same(songs.last));
+  });
+
   testWidgets('defers lyric refresh until index sync completes',
       (tester) async {
     final songs = [
@@ -213,6 +274,13 @@ void main() {
       },
       workerCount: 1,
     );
+    index.entries[songs.first.path] = LyricIndexEntry(
+      audioPath: songs.first.path,
+      fingerprint: const LyricFileFingerprint(audioModified: 0),
+      lines: const [
+        LyricSearchLine(startMs: 0, text: 'needle before indexing'),
+      ],
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -229,6 +297,7 @@ void main() {
 
     expect(index.progress.isSyncing, isTrue);
     expect(index.progress.processed, 25);
+    expect(find.text('正在建立本地歌词索引：已处理 25/26'), findsOneWidget);
     expect(find.text('needle checkpoint', findRichText: true), findsNothing);
 
     releaseSync.complete();

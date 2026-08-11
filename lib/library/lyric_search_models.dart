@@ -168,21 +168,33 @@ List<LyricSearchMatch> searchLyricEntriesForCompiledQuery({
 
   final matches = <LyricSearchMatch>[];
   for (final audio in audios) {
-    final entry = entries[audio.path];
-    if (entry == null) continue;
-
-    final matchingLines = entry.lines
-        .where(
-          (line) =>
-              line.text.trim().isNotEmpty && query.matches(line.searchForms),
-        )
-        .toSet()
-        .toList()
-      ..sort((left, right) => left.startMs.compareTo(right.startMs));
-
-    if (matchingLines.isNotEmpty) {
-      matches.add(LyricSearchMatch(audio: audio, lines: matchingLines));
-    }
+    final match = searchLyricEntryForCompiledQuery(
+      query: query,
+      entry: entries[audio.path],
+      audio: audio,
+    );
+    if (match != null) matches.add(match);
   }
   return matches;
+}
+
+LyricSearchMatch? searchLyricEntryForCompiledQuery({
+  required CompiledLyricQuery query,
+  required LyricIndexEntry? entry,
+  required Audio audio,
+}) {
+  if (entry == null) return null;
+
+  final matchingLines = entry.lines
+      .where(
+        (line) =>
+            line.text.trim().isNotEmpty && query.matches(line.searchForms),
+      )
+      .toSet()
+      .toList()
+    ..sort((left, right) => left.startMs.compareTo(right.startMs));
+
+  return matchingLines.isEmpty
+      ? null
+      : LyricSearchMatch(audio: audio, lines: matchingLines);
 }

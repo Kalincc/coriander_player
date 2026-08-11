@@ -6,7 +6,7 @@ class CompiledLyricQuery {
   const CompiledLyricQuery._(this.forms);
 
   factory CompiledLyricQuery.compile(String query) =>
-      CompiledLyricQuery._(_searchFormsFor(query));
+      CompiledLyricQuery._(List.unmodifiable(_searchFormsFor(query)));
 
   bool get isEmpty => forms.isEmpty;
 

@@ -150,10 +150,14 @@ class _SearchResultPageState extends State<SearchResultPage> {
               Expanded(
                 child: Material(
                   type: MaterialType.transparency,
-                  child: ValueListenableBuilder<LocalSearchState>(
-                    valueListenable: searchController,
-                    builder: (context, state, _) => TabBarView(
-                      children: buildContent(state.result),
+                  child: AnimatedBuilder(
+                    animation: index,
+                    builder: (context, _) =>
+                        ValueListenableBuilder<LocalSearchState>(
+                      valueListenable: searchController,
+                      builder: (context, state, _) => TabBarView(
+                        children: buildContent(state.result),
+                      ),
                     ),
                   ),
                 ),

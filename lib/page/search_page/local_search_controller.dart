@@ -24,6 +24,8 @@ class LocalSearchState {
 }
 
 class LocalSearchController extends ValueNotifier<LocalSearchState> {
+  static const _searchBatchSize = 25;
+
   final LyricSearchIndex lyricIndex;
   final AudioLibrary library;
   final Future<void> Function() _yieldToEventLoop;
@@ -70,14 +72,17 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
     final artistQueryInLowerCase =
         normalizeArtistName(normalizedQuery).toLowerCase();
     final lyricQuery = CompiledLyricQuery.compile(normalizedQuery);
+    final audios = List<Audio>.of(library.audioCollection);
 
     try {
-      result.audios.addAll(
-        library.audioCollection.where(
-          (audio) => audio.title.toLowerCase().contains(queryInLowerCase),
-        ),
-      );
-      if (!await _publishBatch(generation, result)) return;
+      if (!await _searchAudioBatches(
+        generation: generation,
+        result: result,
+        audios: audios,
+        query: queryInLowerCase,
+      )) {
+        return;
+      }
 
       result.artists.addAll(
         library.artistCollection.values.where(
@@ -94,14 +99,14 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
       );
       if (!await _publishBatch(generation, result)) return;
 
-      result.lyrics.addAll(
-        searchLyricEntriesForCompiledQuery(
-          query: lyricQuery,
-          entries: lyricIndex.entries,
-          audios: library.audioCollection,
-        ),
-      );
-      if (!await _publishBatch(generation, result)) return;
+      if (!await _searchLyricBatches(
+        generation: generation,
+        result: result,
+        audios: audios,
+        query: lyricQuery,
+      )) {
+        return;
+      }
 
       if (_isCurrent(generation)) {
         value = LocalSearchState(
@@ -133,6 +138,47 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
       isLoading: true,
       isComplete: false,
     );
+    return true;
+  }
+
+  Future<bool> _searchAudioBatches({
+    required int generation,
+    required UnionSearchResult result,
+    required List<Audio> audios,
+    required String query,
+  }) async {
+    for (var start = 0; start < audios.length; start += _searchBatchSize) {
+      if (!_isCurrent(generation)) return false;
+      final end = (start + _searchBatchSize).clamp(0, audios.length);
+      result.audios.addAll(
+        audios
+            .getRange(start, end)
+            .where((audio) => audio.title.toLowerCase().contains(query)),
+      );
+      if (!await _publishBatch(generation, result)) return false;
+    }
+    return true;
+  }
+
+  Future<bool> _searchLyricBatches({
+    required int generation,
+    required UnionSearchResult result,
+    required List<Audio> audios,
+    required CompiledLyricQuery query,
+  }) async {
+    for (var start = 0; start < audios.length; start += _searchBatchSize) {
+      if (!_isCurrent(generation)) return false;
+      final end = (start + _searchBatchSize).clamp(0, audios.length);
+      for (final audio in audios.getRange(start, end)) {
+        final match = searchLyricEntryForCompiledQuery(
+          query: query,
+          entry: lyricIndex.entries[audio.path],
+          audio: audio,
+        );
+        if (match != null) result.lyrics.add(match);
+      }
+      if (!await _publishBatch(generation, result)) return false;
+    }
     return true;
   }
 

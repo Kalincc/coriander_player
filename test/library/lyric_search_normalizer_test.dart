@@ -10,6 +10,7 @@ void main() {
     expect(query.forms, ['我愛你', '我爱你', 'wo ai ni', 'woaini']);
     expect(query.matches(lyricSearchFormsFor('我爱你')), isTrue);
     expect(query.matches(lyricSearchFormsFor('WO AI NI')), isTrue);
+    expect(() => query.forms.add('mutated'), throwsUnsupportedError);
   });
 
   test('creates normalized Chinese and complete pinyin search forms', () {
