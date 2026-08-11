@@ -152,7 +152,19 @@ List<LyricSearchMatch> searchLyricEntries({
   required Map<String, LyricIndexEntry> entries,
   required Iterable<Audio> audios,
 }) {
-  if (query.trim().isEmpty) return [];
+  return searchLyricEntriesForCompiledQuery(
+    query: CompiledLyricQuery.compile(query),
+    entries: entries,
+    audios: audios,
+  );
+}
+
+List<LyricSearchMatch> searchLyricEntriesForCompiledQuery({
+  required CompiledLyricQuery query,
+  required Map<String, LyricIndexEntry> entries,
+  required Iterable<Audio> audios,
+}) {
+  if (query.isEmpty) return [];
 
   final matches = <LyricSearchMatch>[];
   for (final audio in audios) {
@@ -162,8 +174,7 @@ List<LyricSearchMatch> searchLyricEntries({
     final matchingLines = entry.lines
         .where(
           (line) =>
-              line.text.trim().isNotEmpty &&
-              lyricSearchMatches(query, line.searchForms),
+              line.text.trim().isNotEmpty && query.matches(line.searchForms),
         )
         .toSet()
         .toList()

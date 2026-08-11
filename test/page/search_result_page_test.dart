@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/library/lyric_search_models.dart';
+import 'package:coriander_player/page/search_page/local_search_controller.dart';
 import 'package:coriander_player/page/search_page/search_page.dart';
 import 'package:coriander_player/page/search_page/search_result_page.dart';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
@@ -85,9 +87,155 @@ void main() {
 
     await tester.enterText(find.byType(TextField), 'needle');
     await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.pumpAndSettle();
 
     expect(find.text('a needle line', findRichText: true), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('shows loading first and publishes search categories in batches',
+      (tester) async {
+    final song = _audio(title: 'needle song', path: 'needle.flac');
+    AudioLibrary.instance.audioCollection.add(song);
+    AudioLibrary.instance.artistCollection['Test Artist'] =
+        Artist(name: 'Test Artist')..works.add(song);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SearchResultPage(
+            initialQuery: 'needle',
+            lyricIndex: _index(fingerprint: 1, lines: const []),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(find.text('needle song'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  test('drops results from an older search generation', () async {
+    final firstSong = _audio(title: 'first song', path: 'first.flac');
+    final latestSong = _audio(title: 'latest song', path: 'latest.flac');
+    AudioLibrary.instance.audioCollection.addAll([firstSong, latestSong]);
+    final firstBatchGate = Completer<void>();
+    var yields = 0;
+    final controller = LocalSearchController(
+      lyricIndex: _index(fingerprint: 1, lines: const []),
+      yieldToEventLoop: () {
+        yields++;
+        return yields == 1 ? firstBatchGate.future : Future<void>.value();
+      },
+    );
+    addTearDown(controller.dispose);
+
+    final firstSearch = controller.search('first');
+    expect(controller.value.result.audios, isEmpty);
+    expect(controller.value.isLoading, isTrue);
+
+    final latestSearch = controller.search('latest');
+    await latestSearch;
+
+    expect(controller.value.result.audios, [same(latestSong)]);
+    firstBatchGate.complete();
+    await firstSearch;
+
+    expect(controller.value.result.audios, [same(latestSong)]);
+    expect(controller.value.isComplete, isTrue);
+  });
+
+  test('publishes one search category per yielded batch', () async {
+    final song = _audio(title: 'needle song', path: 'needle.flac');
+    AudioLibrary.instance.audioCollection.add(song);
+    final artist = Artist(name: 'needle artist');
+    AudioLibrary.instance.artistCollection[artist.name] = artist;
+    final gates = [
+      for (var i = 0; i < 4; i++) Completer<void>(),
+    ];
+    var batch = 0;
+    final controller = LocalSearchController(
+      lyricIndex: _index(fingerprint: 1, lines: const []),
+      yieldToEventLoop: () => gates[batch++].future,
+    );
+    addTearDown(controller.dispose);
+
+    final searching = controller.search('needle');
+    expect(controller.value.result.audios, isEmpty);
+
+    gates[0].complete();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.value.result.audios, [same(song)]);
+    expect(controller.value.result.artists, isEmpty);
+
+    gates[1].complete();
+    gates[2].complete();
+    gates[3].complete();
+    await searching;
+
+    expect(controller.value.result.artists, [same(artist)]);
+    expect(controller.value.isComplete, isTrue);
+  });
+
+  testWidgets('defers lyric refresh until index sync completes',
+      (tester) async {
+    final songs = [
+      for (var i = 0; i < 26; i++)
+        _audio(title: 'song $i', path: '$i.flac', modified: i + 1),
+    ];
+    AudioLibrary.instance.audioCollection.addAll(songs);
+    final checkpointReached = Completer<void>();
+    final releaseSync = Completer<void>();
+    var lyricReads = 0;
+    final index = LyricSearchIndex(
+      readIndex: () async => null,
+      writeIndex: (_) async {},
+      fingerprintFor: (audio) async =>
+          LyricFileFingerprint(audioModified: audio.modified),
+      lyricLinesFor: (_) async {
+        lyricReads++;
+        if (lyricReads == 26) {
+          checkpointReached.complete();
+          await releaseSync.future;
+        }
+        return const [
+          LyricSearchLine(startMs: 1000, text: 'needle checkpoint'),
+        ];
+      },
+      workerCount: 1,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SearchResultPage(initialQuery: 'needle', lyricIndex: index),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final syncing = index.sync(songs);
+    await checkpointReached.future;
+    await tester.pump();
+
+    expect(index.progress.isSyncing, isTrue);
+    expect(index.progress.processed, 25);
+    expect(find.text('needle checkpoint', findRichText: true), findsNothing);
+
+    releaseSync.complete();
+    await syncing;
+    await tester.pumpAndSettle();
+
+    expect(find.text('needle checkpoint', findRichText: true), findsWidgets);
   });
 
   test('union search finds the canonical artist for both Chinese variants', () {
@@ -135,7 +283,7 @@ void main() {
           ),
         ),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(
         tester.widgetList<Tab>(find.byType(Tab)).map((tab) => tab.text),
@@ -150,7 +298,7 @@ void main() {
         LyricSearchLine(startMs: 2000, text: 'updated after refresh'),
       ];
       await index.sync([song]);
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(find.text('updated after refresh', findRichText: true),
           findsOneWidget);
@@ -160,7 +308,12 @@ void main() {
   );
 }
 
-Audio _audio({required String title}) => Audio(
+Audio _audio({
+  required String title,
+  String path = 'test.flac',
+  int modified = 100,
+}) =>
+    Audio(
       title,
       'Test Artist',
       'Test Album',
@@ -168,8 +321,8 @@ Audio _audio({required String title}) => Audio(
       180,
       320,
       44100,
-      'test.flac',
-      100,
+      path,
+      modified,
       90,
       'test',
     );

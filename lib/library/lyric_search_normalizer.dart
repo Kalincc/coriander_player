@@ -1,7 +1,38 @@
 import 'package:pinyin/pinyin.dart';
 
-List<String> lyricSearchFormsFor(String text) {
+class CompiledLyricQuery {
+  final List<String> forms;
+
+  const CompiledLyricQuery._(this.forms);
+
+  factory CompiledLyricQuery.compile(String query) =>
+      CompiledLyricQuery._(_searchFormsFor(query));
+
+  bool get isEmpty => forms.isEmpty;
+
+  bool matches(Iterable<String> indexedForms) {
+    if (isEmpty) return false;
+
+    final normalizedIndexedForms = indexedForms.map(_normalize).toList();
+    return forms.any(
+      (queryForm) => normalizedIndexedForms.any(
+        (indexedForm) => indexedForm.contains(queryForm),
+      ),
+    );
+  }
+}
+
+List<String> lyricSearchFormsFor(String text) =>
+    CompiledLyricQuery.compile(text).forms;
+
+bool lyricSearchMatches(String query, Iterable<String> indexedForms) =>
+    CompiledLyricQuery.compile(query).matches(indexedForms);
+
+List<String> _searchFormsFor(String text) {
   final normalizedText = _normalize(text);
+  final traditionalText = _normalize(
+    ChineseHelper.convertToTraditionalChinese(normalizedText),
+  );
   final simplifiedText = _normalize(
     ChineseHelper.convertToSimplifiedChinese(normalizedText),
   );
@@ -11,24 +42,12 @@ List<String> lyricSearchFormsFor(String text) {
   final compactPinyin = spacedPinyin.replaceAll(' ', '');
 
   return {
+    traditionalText,
     normalizedText,
     simplifiedText,
     spacedPinyin,
     compactPinyin,
   }.where((form) => form.isNotEmpty).toList();
-}
-
-bool lyricSearchMatches(String query, Iterable<String> indexedForms) {
-  final queryForms = lyricSearchFormsFor(query);
-  if (queryForms.isEmpty) {
-    return false;
-  }
-
-  return queryForms.any(
-    (queryForm) => indexedForms.any(
-      (indexedForm) => _normalize(indexedForm).contains(queryForm),
-    ),
-  );
 }
 
 String _normalize(String text) => text.trim().toLowerCase().replaceAll(

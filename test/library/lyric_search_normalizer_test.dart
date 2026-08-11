@@ -2,6 +2,16 @@ import 'package:coriander_player/library/lyric_search_normalizer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+      'compiles query forms once for Traditional, Simplified, and pinyin matching',
+      () {
+    final query = CompiledLyricQuery.compile('我愛你');
+
+    expect(query.forms, ['我愛你', '我爱你', 'wo ai ni', 'woaini']);
+    expect(query.matches(lyricSearchFormsFor('我爱你')), isTrue);
+    expect(query.matches(lyricSearchFormsFor('WO AI NI')), isTrue);
+  });
+
   test('creates normalized Chinese and complete pinyin search forms', () {
     final forms = lyricSearchFormsFor('愛情訊息');
 

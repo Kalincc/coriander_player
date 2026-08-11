@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:coriander_player/component/album_tile.dart';
 import 'package:coriander_player/component/artist_tile.dart';
@@ -5,6 +7,7 @@ import 'package:coriander_player/component/audio_tile.dart';
 import 'package:coriander_player/component/lyric_search_result_tile.dart';
 import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
+import 'package:coriander_player/page/search_page/local_search_controller.dart';
 import 'package:coriander_player/page/search_page/search_page.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -26,8 +29,9 @@ class SearchResultPage extends StatefulWidget {
 
 class _SearchResultPageState extends State<SearchResultPage> {
   late final LyricSearchIndex index;
-  late final ValueNotifier<UnionSearchResult> searchResult;
+  late final LocalSearchController searchController;
   late final TextEditingController searchBarController;
+  late bool _wasIndexSyncing;
 
   @override
   void initState() {
@@ -35,13 +39,17 @@ class _SearchResultPageState extends State<SearchResultPage> {
     index = widget.lyricIndex ?? LyricSearchIndex.instance;
     final initialQuery = widget.initialQuery.trim();
     searchBarController = TextEditingController(text: initialQuery);
-    searchResult = ValueNotifier(
-      UnionSearchResult.search(initialQuery, lyricIndex: index),
-    );
+    searchController = LocalSearchController(lyricIndex: index);
+    _wasIndexSyncing = index.progress.isSyncing;
     index.addListener(_handleIndexChanged);
+    unawaited(searchController.search(initialQuery));
   }
 
-  void _handleIndexChanged() => _runSearch();
+  void _handleIndexChanged() {
+    final isSyncing = index.progress.isSyncing;
+    if (_wasIndexSyncing && !isSyncing) _runSearch();
+    _wasIndexSyncing = isSyncing;
+  }
 
   void _runSearch() {
     final query = searchBarController.text.trim();
@@ -52,7 +60,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
         selection: TextSelection.collapsed(offset: query.length),
       );
     }
-    searchResult.value = UnionSearchResult.search(query, lyricIndex: index);
+    unawaited(searchController.search(query));
   }
 
   List<_SearchResultPageBody> buildContent(UnionSearchResult result) => [
@@ -87,7 +95,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
   void dispose() {
     index.removeListener(_handleIndexChanged);
     searchBarController.dispose();
-    searchResult.dispose();
+    searchController.dispose();
     super.dispose();
   }
 
@@ -106,17 +114,27 @@ class _SearchResultPageState extends State<SearchResultPage> {
                 onFocusChange: HotkeysHelper.onFocusChanges,
                 child: Hero(
                   tag: SEARCH_BAR_KEY,
-                  child: TextField(
-                    controller: searchBarController,
-                    decoration: const InputDecoration(
-                      suffixIcon: Padding(
-                        padding: EdgeInsets.only(right: 12),
-                        child: Icon(Symbols.search),
+                  child: ValueListenableBuilder<LocalSearchState>(
+                    valueListenable: searchController,
+                    builder: (context, state, _) => TextField(
+                      controller: searchBarController,
+                      decoration: InputDecoration(
+                        suffixIcon: Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: state.isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Symbols.search),
+                        ),
+                        hintText: '搜索歌曲、艺术家、专辑、歌词',
+                        border: const OutlineInputBorder(),
                       ),
-                      hintText: '搜索歌曲、艺术家、专辑、歌词',
-                      border: OutlineInputBorder(),
+                      onSubmitted: (_) => _runSearch(),
                     ),
-                    onSubmitted: (_) => _runSearch(),
                   ),
                 ),
               ),
@@ -132,10 +150,10 @@ class _SearchResultPageState extends State<SearchResultPage> {
               Expanded(
                 child: Material(
                   type: MaterialType.transparency,
-                  child: ValueListenableBuilder<UnionSearchResult>(
-                    valueListenable: searchResult,
-                    builder: (context, value, _) => TabBarView(
-                      children: buildContent(value),
+                  child: ValueListenableBuilder<LocalSearchState>(
+                    valueListenable: searchController,
+                    builder: (context, state, _) => TabBarView(
+                      children: buildContent(state.result),
                     ),
                   ),
                 ),

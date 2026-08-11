@@ -18,6 +18,13 @@ class UnionSearchResult {
 
   UnionSearchResult(this.query);
 
+  factory UnionSearchResult.copyOf(UnionSearchResult source) =>
+      UnionSearchResult(source.query)
+        ..audios.addAll(source.audios)
+        ..artists.addAll(source.artists)
+        ..album.addAll(source.album)
+        ..lyrics.addAll(source.lyrics);
+
   static UnionSearchResult search(
     String query, {
     LyricSearchIndex? lyricIndex,
