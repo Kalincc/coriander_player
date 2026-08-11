@@ -125,6 +125,34 @@ void main() {
     expect(isLiked(song), isFalse);
   });
 
+  test(
+      'adds unique songs, updates revision, and exposes the latest artwork source',
+      () {
+    final first = makeAudio('D:/music/first.flac');
+    final latest = makeAudio('D:/music/latest.flac');
+    final playlist = Playlist('regular', {});
+    final revision = playlistRevision.value;
+
+    expect(playlist.latestAudio, isNull);
+    expect(addAudioToPlaylist(playlist, first), isTrue);
+    expect(playlistRevision.value, revision + 1);
+    expect(addAudioToPlaylist(playlist, latest), isTrue);
+    expect(playlist.latestAudio, same(latest));
+    expect(addAudioToPlaylist(playlist, latest), isFalse);
+    expect(playlist.audios.keys, [first.path, latest.path]);
+  });
+
+  test('removes songs through the playlist helper and updates revision', () {
+    final song = makeAudio('D:/music/remove.flac');
+    final playlist = Playlist('regular', {song.path: song});
+    final revision = playlistRevision.value;
+
+    expect(removeAudioFromPlaylist(playlist, song.path), isTrue);
+    expect(playlist.audios, isEmpty);
+    expect(playlistRevision.value, revision + 1);
+    expect(removeAudioFromPlaylist(playlist, song.path), isFalse);
+  });
+
   test('removes deleted songs from every playlist during reconciliation',
       () async {
     final kept = makeAudio('D:/music/kept.flac');

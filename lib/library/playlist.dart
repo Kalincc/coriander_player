@@ -74,12 +74,25 @@ Future<void> toggleLiked(Audio audio, {LocalJsonStore? store}) async {
     (playlist) => playlist.name == likedPlaylistName,
   );
   if (liked.audios.containsKey(audio.path)) {
-    liked.audios.remove(audio.path);
+    removeAudioFromPlaylist(liked, audio.path);
   } else {
-    liked.audios[audio.path] = audio;
+    addAudioToPlaylist(liked, audio);
   }
   await savePlaylists(store: store);
+}
+
+bool addAudioToPlaylist(Playlist playlist, Audio audio) {
+  if (playlist.audios.containsKey(audio.path)) return false;
+  playlist.audios[audio.path] = audio;
   playlistRevision.value++;
+  return true;
+}
+
+bool removeAudioFromPlaylist(Playlist playlist, String path) {
+  if (!playlist.audios.containsKey(path)) return false;
+  playlist.audios.remove(path);
+  playlistRevision.value++;
+  return true;
 }
 
 Future<void> reconcilePlaylistAudios(
@@ -202,6 +215,8 @@ class Playlist {
 
   /// path, audio
   Map<String, Audio> audios;
+
+  Audio? get latestAudio => audios.isEmpty ? null : audios.values.last;
 
   final bool isSystem;
 

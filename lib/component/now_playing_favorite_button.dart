@@ -31,7 +31,7 @@ class NowPlayingFavoriteButton extends StatelessWidget {
               : () async {
                   await (onToggle ?? _toggleLiked)(currentAudio);
                 },
-          icon: Icon(liked ? Symbols.favorite : Symbols.favorite_border),
+          icon: Icon(Symbols.favorite, fill: liked ? 1 : 0),
           color: scheme.onSecondaryContainer,
         );
       },

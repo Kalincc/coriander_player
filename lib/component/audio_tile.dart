@@ -1,4 +1,4 @@
-import 'package:coriander_player/component/scroll_aware_future_builder.dart';
+import 'package:coriander_player/component/artwork_thumbnail.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/page/uni_page.dart';
@@ -96,14 +96,14 @@ class AudioTile extends StatelessWidget {
           menuChildren: List.generate(
             PLAYLISTS.length,
             (i) => MenuItemButton(
-              onPressed: () {
-                final added = PLAYLISTS[i].audios.containsKey(audio.path);
-                if (added) {
+              onPressed: () async {
+                final added = addAudioToPlaylist(PLAYLISTS[i], audio);
+                if (!added) {
                   showTextOnSnackBar("歌曲“${audio.title}”已存在");
                   return;
                 }
 
-                PLAYLISTS[i].audios[audio.path] = audio;
+                await savePlaylists();
                 showTextOnSnackBar(
                   "成功将“${audio.title}”添加到歌单“${PLAYLISTS[i].name}”",
                 );
@@ -126,11 +126,6 @@ class AudioTile extends StatelessWidget {
       ],
       builder: (context, controller, _) {
         final textColor = focus ? scheme.primary : scheme.onSurface;
-        final placeholder = Icon(
-          Symbols.broken_image,
-          size: 48.0,
-          color: scheme.onSurface,
-        );
 
         return Ink(
           height: 64.0,
@@ -177,25 +172,7 @@ class AudioTile extends StatelessWidget {
                     child: leading!,
                   ),
 
-                /// cover
-                ScrollAwareFutureBuilder(
-                  future: () => audio.cover,
-                  builder: (context, snapshot) {
-                    if (snapshot.data == null) {
-                      return placeholder;
-                    }
-
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(8.0),
-                      child: Image(
-                        image: snapshot.data!,
-                        width: 48.0,
-                        height: 48.0,
-                        errorBuilder: (_, __, ___) => placeholder,
-                      ),
-                    );
-                  },
-                ),
+                ArtworkThumbnail(image: audio.cover, size: 48.0),
                 const SizedBox(width: 16.0),
 
                 /// title, artist and album

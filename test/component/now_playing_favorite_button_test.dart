@@ -1,9 +1,11 @@
 import 'package:coriander_player/component/now_playing_favorite_button.dart';
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/playlist.dart';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
 import 'package:coriander_player/src/rust/frb_generated.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 Audio _audio() => Audio(
       'D:/music/favorite.flac',
@@ -47,15 +49,31 @@ void main() {
           onToggle: (_) async {
             toggleCount++;
             liked = !liked;
+            playlistRevision.value++;
           },
         ),
       ),
     );
 
+    Icon favoriteIcon() => tester.widget<Icon>(
+          find.byWidgetPredicate(
+            (widget) => widget is Icon && widget.icon == Symbols.favorite,
+          ),
+        );
+
+    expect(favoriteIcon().fill, 0);
+
     await tester.tap(find.byType(IconButton));
     await tester.pump();
 
     expect(toggleCount, 1);
+    expect(favoriteIcon().fill, 1);
+
+    await tester.tap(find.byType(IconButton));
+    await tester.pump();
+
+    expect(toggleCount, 2);
+    expect(favoriteIcon().fill, 0);
   });
 }
 

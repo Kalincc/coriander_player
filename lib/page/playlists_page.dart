@@ -1,4 +1,5 @@
 import 'package:coriander_player/app_preference.dart';
+import 'package:coriander_player/component/artwork_thumbnail.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/page/uni_page.dart';
@@ -59,6 +60,10 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       subtitle: "${PLAYLISTS.length} 个歌单",
       contentList: PLAYLISTS,
       contentBuilder: (context, item, i, multiSelectController) => ListTile(
+        leading: ArtworkThumbnail(
+          image: PLAYLISTS[i].latestAudio?.cover,
+          size: 48,
+        ),
         title: Text(
           PLAYLISTS[i].name,
           softWrap: false,
