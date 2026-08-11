@@ -15,18 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 void main() {
-  late Directory directory;
-
   setUpAll(() {
     RustLib.initMock(api: _TestRustLibApi());
-  });
-
-  setUp(() async {
-    directory = await Directory.systemTemp.createTemp('listening-report-test');
-  });
-
-  tearDown(() async {
-    await directory.delete(recursive: true);
   });
 
   testWidgets(
@@ -34,18 +24,16 @@ void main() {
     (tester) async {
       final now = DateTime(2026, 8, 5, 14);
       final audio = _audio(path: 'D:/music/weekly.flac', title: 'Weekly song');
-      final history = await _historyWithQualifiedPlay(
-        directory,
-        audio,
-        now,
-      );
+      final history = await _historyWithQualifiedPlay(audio, now);
 
       await tester.pumpWidget(
         MaterialApp(
-          home: ListeningReportPage(
-            historyService: history,
-            audios: [audio],
-            now: () => now,
+          home: Scaffold(
+            body: ListeningReportPage(
+              historyService: history,
+              audios: [audio],
+              now: () => now,
+            ),
           ),
         ),
       );
@@ -58,7 +46,6 @@ void main() {
       expect(find.text('有效播放'), findsOneWidget);
       expect(find.text('歌曲 Top 10'), findsOneWidget);
       expect(find.text('歌手 Top 10'), findsOneWidget);
-      expect(find.text('专辑 Top 10'), findsOneWidget);
       expect(find.text('Weekly song'), findsOneWidget);
       expect(
         find.descendant(
@@ -105,6 +92,8 @@ void main() {
             .selected,
         isTrue,
       );
+      await tester.scrollUntilVisible(find.text('专辑 Top 10'), 400);
+      expect(find.text('专辑 Top 10'), findsOneWidget);
     },
   );
 
@@ -112,18 +101,16 @@ void main() {
       (tester) async {
     final now = DateTime(2026, 8, 5, 14);
     final audio = _audio(path: 'D:/music/missing.flac', title: 'Missing song');
-    final history = await _historyWithQualifiedPlay(
-      directory,
-      audio,
-      now,
-    );
+    final history = await _historyWithQualifiedPlay(audio, now);
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ListeningReportPage(
-          historyService: history,
-          audios: const [],
-          now: () => now,
+        home: Scaffold(
+          body: ListeningReportPage(
+            historyService: history,
+            audios: const [],
+            now: () => now,
+          ),
         ),
       ),
     );
@@ -144,28 +131,30 @@ void main() {
     final now = DateTime(2026, 8, 5, 14);
     final audio = _audio(path: 'D:/music/month.flac', title: 'Month-only song');
     final history = await _historyWithQualifiedPlay(
-      directory,
       audio,
       DateTime(2026, 8, 1, 14),
     );
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ListeningReportPage(
-          historyService: history,
-          audios: [audio],
-          now: () => now,
+        home: Scaffold(
+          body: ListeningReportPage(
+            historyService: history,
+            audios: [audio],
+            now: () => now,
+          ),
         ),
       ),
     );
 
     expect(find.text('这个周期还没有有效播放记录'), findsOneWidget);
-    expect(find.text('Month-only song'), findsNothing);
+    expect(find.text('歌曲 Top 10'), findsNothing);
 
     await tester.tap(find.text('本月'));
     await tester.pump();
 
     expect(find.text('这个周期还没有有效播放记录'), findsNothing);
+    expect(find.text('歌曲 Top 10'), findsOneWidget);
     expect(find.text('Month-only song'), findsOneWidget);
     expect(find.text('1 次'), findsOneWidget);
   });
@@ -174,7 +163,7 @@ void main() {
       (tester) async {
     final now = DateTime(2026, 8, 5, 14);
     final history = PlaybackHistoryService(
-      store: LocalJsonStore(directory),
+      store: _MemoryStore(),
       now: () => now,
     );
     final audios = List.generate(
@@ -195,14 +184,17 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ListeningReportPage(
-          historyService: history,
-          audios: audios,
-          now: () => now,
+        home: Scaffold(
+          body: ListeningReportPage(
+            historyService: history,
+            audios: audios,
+            now: () => now,
+          ),
         ),
       ),
     );
 
+    await tester.scrollUntilVisible(find.text('最近播放'), 400);
     expect(find.text('最近播放'), findsOneWidget);
     expect(
       find.byKey(
@@ -269,7 +261,6 @@ void main() {
       ),
     );
     final history = await _historyWithQualifiedPlays(
-      directory,
       [
         for (final audio in audios.take(10)) ...[audio, audio],
         audios.last,
@@ -279,13 +270,17 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ListeningReportPage(
-          historyService: history,
-          audios: audios,
-          now: () => now,
+        home: Scaffold(
+          body: ListeningReportPage(
+            historyService: history,
+            audios: audios,
+            now: () => now,
+          ),
         ),
       ),
     );
+
+    await tester.scrollUntilVisible(find.text('Song 9'), 400);
 
     for (var index = 0; index < 10; index++) {
       expect(find.text('Song $index'), findsOneWidget);
@@ -297,17 +292,21 @@ void main() {
       (tester) async {
     final now = DateTime(2026, 8, 5, 14);
     final audio = _audio(path: 'D:/music/detail.flac', title: 'Detail song');
-    final history = await _historyWithQualifiedPlay(directory, audio, now);
+    final history = await _historyWithQualifiedPlay(audio, now);
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ListeningReportPage(
-          historyService: history,
-          audios: [audio],
-          now: () => now,
+        home: Scaffold(
+          body: ListeningReportPage(
+            historyService: history,
+            audios: [audio],
+            now: () => now,
+          ),
         ),
       ),
     );
+
+    await tester.scrollUntilVisible(find.text('Test artist'), 400);
 
     expect(
       tester
@@ -315,6 +314,8 @@ void main() {
           .onTap,
       isNotNull,
     );
+
+    await tester.scrollUntilVisible(find.text('Test album'), 400);
     expect(
       tester
           .widget<ListTile>(find.widgetWithText(ListTile, 'Test album'))
@@ -327,16 +328,18 @@ void main() {
       (tester) async {
     final now = DateTime(2026, 8, 5, 14);
     final audio = _audio(path: 'D:/music/navigation.flac', title: 'Navigate');
-    final history = await _historyWithQualifiedPlay(directory, audio, now);
+    final history = await _historyWithQualifiedPlay(audio, now);
     final router = GoRouter(
       initialLocation: app_paths.LISTENING_REPORT_PAGE,
       routes: [
         GoRoute(
           path: app_paths.LISTENING_REPORT_PAGE,
-          builder: (context, state) => ListeningReportPage(
-            historyService: history,
-            audios: [audio],
-            now: () => now,
+          builder: (context, state) => Scaffold(
+            body: ListeningReportPage(
+              historyService: history,
+              audios: [audio],
+              now: () => now,
+            ),
           ),
         ),
         GoRoute(
@@ -359,7 +362,9 @@ void main() {
   testWidgets('shows an unavailable state before playback history is loaded',
       (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: ListeningReportPage()),
+      const MaterialApp(
+        home: Scaffold(body: ListeningReportPage()),
+      ),
     );
 
     expect(find.text('听歌报告暂不可用'), findsOneWidget);
@@ -377,20 +382,18 @@ void main() {
 }
 
 Future<PlaybackHistoryService> _historyWithQualifiedPlay(
-  Directory directory,
   Audio audio,
   DateTime now,
 ) async {
-  return _historyWithQualifiedPlays(directory, [audio], now);
+  return _historyWithQualifiedPlays([audio], now);
 }
 
 Future<PlaybackHistoryService> _historyWithQualifiedPlays(
-  Directory directory,
   Iterable<Audio> audios,
   DateTime now,
 ) async {
   final history = PlaybackHistoryService(
-    store: LocalJsonStore(directory),
+    store: _MemoryStore(),
     now: () => now,
   );
   for (final audio in audios) {
@@ -414,6 +417,20 @@ Audio _audio({required String path, required String title}) => Audio(
       1,
       'Lofty',
     );
+
+class _MemoryStore extends LocalJsonStore {
+  _MemoryStore() : super(Directory('listening-report-memory'));
+
+  Object? _value;
+
+  @override
+  Future<Object?> read(String fileName) async => _value;
+
+  @override
+  Future<void> writeAtomically(String fileName, Object value) async {
+    _value = value;
+  }
+}
 
 class _TestRustLibApi implements RustLibApi {
   @override
