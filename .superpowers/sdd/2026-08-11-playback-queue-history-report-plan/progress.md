@@ -15,3 +15,7 @@ Task 3: implementation `a65c43a` (history event model/service and local weekly/m
 Task 3: review found Critical: resumed sessions counted absolute playback position as new listened duration.
 Task 3: fix round 1 `b472766`; review READY (`task-3-rereview.md`, 7/7 scoped tests and static checks clean).
 Task 3: complete (`a65c43a`, `b472766`; resumed sessions now use per-session position delta).
+Task 4: implementation `595e612` (history/queue lifecycle, queue editor, protected liked heart; initial scoped tests passed).
+Task 4: review found Critical startup attach gap plus Important current-item state, blocking history I/O, and seek accounting issues.
+Task 4: fix round 1 `c825229`; review READY (`task-4-rereview.md`, 17/17 scoped tests, targeted analyze/diff clean).
+Task 4: complete (`595e612`, `c825229`; startup load/attach and runtime lifecycle now wired).
