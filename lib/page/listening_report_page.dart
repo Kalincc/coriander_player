@@ -1,5 +1,6 @@
 import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:coriander_player/component/artwork_thumbnail.dart';
+import 'package:coriander_player/component/listening_duration_chart.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/listening_report.dart';
 import 'package:coriander_player/library/playback_history_models.dart';
@@ -112,8 +113,9 @@ class _ReportContent extends StatelessWidget {
           const SizedBox(height: 16),
           _SummaryCards(report: report),
           const SizedBox(height: 16),
-          _RankSection(
+          _ChartSection(
             title: '歌曲 Top 10',
+            keyPrefix: 'song',
             ranks: report.songRanks,
             artworkFor: (rank) => metadata.audiosByPath[rank.key]?.cover,
             destinationFor: (rank) {
@@ -124,8 +126,9 @@ class _ReportContent extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
-          _RankSection(
+          _ChartSection(
             title: '歌手 Top 10',
+            keyPrefix: 'artist',
             ranks: report.artistRanks,
             artworkFor: (rank) => _firstAvailableArtwork(
               metadata.artistsByName[rank.key]?.works ?? const [],
@@ -138,8 +141,9 @@ class _ReportContent extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
-          _RankSection(
+          _ChartSection(
             title: '专辑 Top 10',
+            keyPrefix: 'album',
             ranks: report.albumRanks,
             artworkFor: (rank) {
               final works = metadata.albumsByName[rank.key]?.works;
@@ -253,26 +257,23 @@ class _SummaryCard extends StatelessWidget {
       );
 }
 
-class _RankSection extends StatelessWidget {
-  const _RankSection({
+class _ChartSection extends StatelessWidget {
+  const _ChartSection({
     required this.title,
+    required this.keyPrefix,
     required this.ranks,
     required this.artworkFor,
     required this.destinationFor,
   });
 
   final String title;
+  final String keyPrefix;
   final List<ListeningRank> ranks;
   final Future<ImageProvider?>? Function(ListeningRank rank) artworkFor;
   final _ReportDestination? Function(ListeningRank rank) destinationFor;
 
   @override
   Widget build(BuildContext context) {
-    final maxPlayCount = ranks.fold<int>(
-      0,
-      (maximum, candidate) =>
-          candidate.playCount > maximum ? candidate.playCount : maximum,
-    );
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -284,64 +285,24 @@ class _RankSection extends StatelessWidget {
             if (ranks.isEmpty)
               const Text('暂无数据')
             else
-              ...ranks.indexed.map((entry) {
-                final rank = entry.$2;
-                final destination = destinationFor(rank);
-                final ratio =
-                    maxPlayCount == 0 ? 0.0 : rank.playCount / maxPlayCount;
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        child: Text('${entry.$1 + 1}'),
-                      ),
-                      const SizedBox(width: 8),
-                      ArtworkThumbnail(image: artworkFor(rank), size: 48),
-                    ],
-                  ),
-                  title: Text(rank.name),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                          '${rank.playCount} 次 · ${_formatDuration(rank.listened)}'),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        height: 8,
-                        width: double.infinity,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: FractionallySizedBox(
-                            key: ValueKey('rank-bar-${rank.name}'),
-                            alignment: Alignment.centerLeft,
-                            widthFactor: ratio.clamp(0.0, 1.0).toDouble(),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
+              ListeningDurationChart(
+                keyPrefix: keyPrefix,
+                items: ranks.map((rank) {
+                  final destination = destinationFor(rank);
+                  return ListeningDurationChartItem(
+                    label: rank.name,
+                    listened: rank.listened,
+                    playCount: rank.playCount,
+                    artwork: artworkFor(rank),
+                    onTap: destination == null
+                        ? null
+                        : () => context.push(
+                              destination.path,
+                              extra: destination.extra,
                             ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  onTap: destination == null
-                      ? null
-                      : () => context.push(destination.path,
-                          extra: destination.extra),
-                );
-              }),
+                  );
+                }).toList(growable: false),
+              ),
           ],
         ),
       ),

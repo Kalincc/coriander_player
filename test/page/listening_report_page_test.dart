@@ -46,7 +46,6 @@ void main() {
       expect(find.text('总听歌时长'), findsOneWidget);
       expect(find.text('有效播放'), findsOneWidget);
       expect(find.text('歌曲 Top 10'), findsOneWidget);
-      expect(find.text('歌手 Top 10'), findsOneWidget);
       expect(find.text('Weekly song'), findsOneWidget);
       expect(
         find.descendant(
@@ -93,7 +92,17 @@ void main() {
             .selected,
         isTrue,
       );
-      await tester.scrollUntilVisible(find.text('专辑 Top 10'), 400);
+      await tester.scrollUntilVisible(
+        find.text('歌手 Top 10'),
+        400,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('歌手 Top 10'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('专辑 Top 10'),
+        400,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('专辑 Top 10'), findsOneWidget);
     },
   );
@@ -119,8 +128,9 @@ void main() {
     expect(find.text('D:/music/missing.flac'), findsOneWidget);
     expect(
       tester
-          .widget<ListTile>(
-            find.widgetWithText(ListTile, 'D:/music/missing.flac'),
+          .widget<InkWell>(
+            find.byKey(const ValueKey(
+                'listening-chart-item-song-D:/music/missing.flac')),
           )
           .onTap,
       isNull,
@@ -157,7 +167,7 @@ void main() {
     expect(find.text('这个周期还没有有效播放记录'), findsNothing);
     expect(find.text('歌曲 Top 10'), findsOneWidget);
     expect(find.text('Month-only song'), findsOneWidget);
-    expect(find.text('1 次'), findsOneWidget);
+    expect(find.text('1 次'), findsWidgets);
   });
 
   testWidgets('shows the twenty most recent plays with detail navigation only',
@@ -195,7 +205,11 @@ void main() {
       ),
     );
 
-    await tester.scrollUntilVisible(find.text('最近播放'), 400);
+    await tester.scrollUntilVisible(
+      find.text('最近播放'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('最近播放'), findsOneWidget);
     expect(
       find.byKey(
@@ -275,7 +289,8 @@ void main() {
 
     expect(
       find.descendant(
-        of: find.widgetWithText(ListTile, 'Artwork song').first,
+        of: find
+            .byKey(const ValueKey('listening-chart-item-song-Artwork song')),
         matching: find.byType(ArtworkThumbnail),
       ),
       findsOneWidget,
@@ -284,7 +299,8 @@ void main() {
       tester
           .widget<ArtworkThumbnail>(
             find.descendant(
-              of: find.widgetWithText(ListTile, 'Artwork song').first,
+              of: find.byKey(
+                  const ValueKey('listening-chart-item-song-Artwork song')),
               matching: find.byType(ArtworkThumbnail),
             ),
           )
@@ -292,19 +308,28 @@ void main() {
       isNotNull,
     );
 
-    await tester.scrollUntilVisible(find.text('Test artist'), 400);
+    await tester.scrollUntilVisible(
+      find.text('Test artist'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(
       find.descendant(
-        of: find.widgetWithText(ListTile, 'Test artist'),
+        of: find
+            .byKey(const ValueKey('listening-chart-item-artist-Test artist')),
         matching: find.byType(ArtworkThumbnail),
       ),
       findsOneWidget,
     );
 
-    await tester.scrollUntilVisible(find.text('Test album'), 400);
+    await tester.scrollUntilVisible(
+      find.text('Test album'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(
       find.descendant(
-        of: find.widgetWithText(ListTile, 'Test album'),
+        of: find.byKey(const ValueKey('listening-chart-item-album-Test album')),
         matching: find.byType(ArtworkThumbnail),
       ),
       findsOneWidget,
@@ -317,14 +342,18 @@ void main() {
       qualified: true,
     );
     final recentItem = find.byKey(ValueKey(recentHistoryItemKey(event, 0)));
-    await tester.scrollUntilVisible(recentItem, 400);
+    await tester.scrollUntilVisible(
+      recentItem,
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(
       find.descendant(of: recentItem, matching: find.byType(ArtworkThumbnail)),
       findsOneWidget,
     );
   });
 
-  testWidgets('scales report bars to the highest play count in each section',
+  testWidgets('scales vertical report bars to cumulative listening duration',
       (tester) async {
     final now = DateTime(2026, 8, 5, 14);
     final leader = _audio(
@@ -354,19 +383,20 @@ void main() {
 
     expect(
       tester
-          .widget<FractionallySizedBox>(
-            find.byKey(const ValueKey('rank-bar-Chart leader')),
+          .widget<SizedBox>(
+            find.byKey(const ValueKey('listening-chart-bar-song-Chart leader')),
           )
-          .widthFactor,
-      1.0,
+          .height,
+      closeTo(168, 0.01),
     );
     expect(
       tester
-          .widget<FractionallySizedBox>(
-            find.byKey(const ValueKey('rank-bar-Chart follower')),
+          .widget<SizedBox>(
+            find.byKey(
+                const ValueKey('listening-chart-bar-song-Chart follower')),
           )
-          .widthFactor,
-      0.5,
+          .height,
+      closeTo(84, 0.01),
     );
   });
 
@@ -400,12 +430,16 @@ void main() {
       ),
     );
 
-    await tester.scrollUntilVisible(find.text('Song 9'), 400);
-
     for (var index = 0; index < 10; index++) {
-      expect(find.text('Song $index'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey('listening-chart-item-song-Song $index')),
+        findsOneWidget,
+      );
     }
-    expect(find.text('Song 10'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('listening-chart-item-song-Song 10')),
+      findsNothing,
+    );
   });
 
   testWidgets('uses injected metadata for artist and album detail targets',
@@ -426,19 +460,29 @@ void main() {
       ),
     );
 
-    await tester.scrollUntilVisible(find.text('Test artist'), 400);
+    await tester.scrollUntilVisible(
+      find.text('Test artist'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
 
     expect(
       tester
-          .widget<ListTile>(find.widgetWithText(ListTile, 'Test artist'))
+          .widget<InkWell>(find
+              .byKey(const ValueKey('listening-chart-item-artist-Test artist')))
           .onTap,
       isNotNull,
     );
 
-    await tester.scrollUntilVisible(find.text('Test album'), 400);
+    await tester.scrollUntilVisible(
+      find.text('Test album'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(
       tester
-          .widget<ListTile>(find.widgetWithText(ListTile, 'Test album'))
+          .widget<InkWell>(find
+              .byKey(const ValueKey('listening-chart-item-album-Test album')))
           .onTap,
       isNotNull,
     );
@@ -472,7 +516,8 @@ void main() {
     );
 
     await tester.pumpWidget(MaterialApp.router(routerConfig: router));
-    await tester.tap(find.widgetWithText(ListTile, 'Navigate'));
+    await tester
+        .tap(find.byKey(const ValueKey('listening-chart-item-song-Navigate')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
