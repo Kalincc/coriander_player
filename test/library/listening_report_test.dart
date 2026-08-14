@@ -79,7 +79,7 @@ void main() {
         isNot(recentHistoryItemKey(repeated, 1)));
   });
 
-  test('aggregates the top ten ranks by plays then duration then name', () {
+  test('aggregates the top ten ranks by duration then plays then name', () {
     final metadata = <String, Audio>{};
     final events = <PlaybackHistoryEvent>[];
     final startedAt = DateTime(2026, 8, 11, 9);
@@ -104,16 +104,60 @@ void main() {
     expect(report.qualifiedPlayCount, 14);
     expect(report.songRanks, hasLength(10));
     expect(report.songRanks.first, isA<ListeningRank>());
-    expect(report.songRanks.first.name, 'Song 0');
-    expect(report.songRanks.first.playCount, 2);
-    expect(report.songRanks.first.listened, const Duration(seconds: 70));
-    expect(report.songRanks[1].name, 'Song 1');
+    expect(report.songRanks.first.name, 'D:/music/missing.flac');
+    expect(report.songRanks.first.playCount, 1);
+    expect(report.songRanks.first.listened, const Duration(seconds: 120));
+    expect(report.songRanks[1].name, 'Song 0');
+    expect(report.songRanks[2].name, 'Song 1');
     expect(report.songRanks.map((rank) => rank.name),
         contains('D:/music/missing.flac'));
     expect(report.songRanks.last.name, 'Song 7');
     expect(
         report.artistRanks.map((rank) => rank.name), ['Artist B', 'Artist A']);
     expect(report.albumRanks.map((rank) => rank.name), ['Album B', 'Album A']);
+  });
+
+  test('uses play count and name only to break duration ties', () {
+    final startedAt = DateTime(2026, 8, 11, 9);
+    Audio named(String path, String name) => Audio(
+          name,
+          '$name Artist',
+          '$name Album',
+          1,
+          180,
+          320,
+          44100,
+          path,
+          1,
+          1,
+          'test',
+        );
+    final metadata = {
+      'long': named('long', 'Long'),
+      'frequent': named('frequent', 'Frequent'),
+      'single': named('single', 'Single'),
+      'alpha': named('alpha', 'Alpha'),
+      'beta': named('beta', 'Beta'),
+    };
+    final report = buildListeningReport(
+      [
+        event('long', startedAt, seconds: 120),
+        event('frequent', startedAt, seconds: 30),
+        event('frequent', startedAt, seconds: 30),
+        event('single', startedAt, seconds: 60),
+        event('beta', startedAt, seconds: 30),
+        event('alpha', startedAt, seconds: 30),
+      ],
+      ReportPeriod.currentMonth(startedAt),
+      metadata,
+    );
+
+    expect(
+      report.songRanks.map((rank) => rank.name),
+      ['Long', 'Frequent', 'Single', 'Alpha', 'Beta'],
+    );
+    expect(report.artistRanks.first.name, 'Long Artist');
+    expect(report.albumRanks.first.name, 'Long Album');
   });
 }
 

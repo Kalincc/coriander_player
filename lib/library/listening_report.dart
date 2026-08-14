@@ -142,10 +142,10 @@ List<ListeningRank> _topTen(Iterable<_RankTotal> totals) {
       )
       .toList()
     ..sort((a, b) {
-      final byPlays = b.playCount.compareTo(a.playCount);
-      if (byPlays != 0) return byPlays;
       final byDuration = b.listened.compareTo(a.listened);
       if (byDuration != 0) return byDuration;
+      final byPlays = b.playCount.compareTo(a.playCount);
+      if (byPlays != 0) return byPlays;
       final byName = a.name.compareTo(b.name);
       if (byName != 0) return byName;
       return a.key.compareTo(b.key);
