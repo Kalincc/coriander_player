@@ -6,7 +6,7 @@ on:
       release_tag:
         description: Version used for a validation build (does not publish)
         required: true
-        default: v1.5.1-kalin.1
+        default: v1.5.1-kalin.9
   push:
     tags:
       - 'v*-kalin.*'
