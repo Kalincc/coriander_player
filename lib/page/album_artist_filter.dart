@@ -1,5 +1,6 @@
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/artist_name_normalizer.dart';
+import 'package:coriander_player/page/album_grouping.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -29,13 +30,19 @@ class AlbumArtistFilterButton extends StatelessWidget {
   const AlbumArtistFilterButton({
     super.key,
     required this.artistNames,
-    required this.selectedArtistName,
+    required this.selection,
     required this.onSelected,
   });
 
   final List<String> artistNames;
-  final String? selectedArtistName;
-  final ValueChanged<String?> onSelected;
+  final AlbumBrowseSelection selection;
+  final ValueChanged<AlbumBrowseSelection> onSelected;
+
+  String get label => switch (selection.mode) {
+        AlbumBrowseMode.grouped => '分类：按艺术家',
+        AlbumBrowseMode.uncategorized => '分类：无分类',
+        AlbumBrowseMode.artist => '艺术家：${selection.artistName}',
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +56,7 @@ class AlbumArtistFilterButton extends StatelessWidget {
             onSelected: onSelected,
           ),
         ),
-        child: Text('艺术家：${selectedArtistName ?? '无分类'}'),
+        child: Text(label),
       ),
     );
   }
@@ -62,7 +69,7 @@ class _AlbumArtistFilterDialog extends StatefulWidget {
   });
 
   final List<String> artistNames;
-  final ValueChanged<String?> onSelected;
+  final ValueChanged<AlbumBrowseSelection> onSelected;
 
   @override
   State<_AlbumArtistFilterDialog> createState() =>
@@ -72,8 +79,8 @@ class _AlbumArtistFilterDialog extends StatefulWidget {
 class _AlbumArtistFilterDialogState extends State<_AlbumArtistFilterDialog> {
   String query = '';
 
-  void select(String? artistName) {
-    widget.onSelected(artistName);
+  void select(AlbumBrowseSelection selection) {
+    widget.onSelected(selection);
     Navigator.pop(context);
   }
 
@@ -92,7 +99,7 @@ class _AlbumArtistFilterDialogState extends State<_AlbumArtistFilterDialog> {
                 children: [
                   const Expanded(
                     child: Text(
-                      '按艺术家筛选专辑',
+                      '专辑分类',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -116,8 +123,12 @@ class _AlbumArtistFilterDialogState extends State<_AlbumArtistFilterDialog> {
               ),
               const SizedBox(height: 8),
               ListTile(
-                title: const Text('无分类'),
-                onTap: () => select(null),
+                title: const Text('分类：按艺术家'),
+                onTap: () => select(const AlbumBrowseSelection.grouped()),
+              ),
+              ListTile(
+                title: const Text('分类：无分类'),
+                onTap: () => select(const AlbumBrowseSelection.uncategorized()),
               ),
               const Divider(height: 1),
               Expanded(
@@ -127,7 +138,8 @@ class _AlbumArtistFilterDialogState extends State<_AlbumArtistFilterDialog> {
                     final artistName = artistNames[index];
                     return ListTile(
                       title: Text(artistName),
-                      onTap: () => select(artistName),
+                      onTap: () =>
+                          select(AlbumBrowseSelection.artist(artistName)),
                     );
                   },
                 ),

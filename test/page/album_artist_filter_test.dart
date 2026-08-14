@@ -1,6 +1,7 @@
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/page/album_artist_filter.dart';
+import 'package:coriander_player/page/album_grouping.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,16 +81,16 @@ void main() {
     );
   });
 
-  testWidgets('dialog searches, selects an artist, and resets to no category',
+  testWidgets('dialog selects grouped, artist, and uncategorized modes',
       (tester) async {
-    String? selected;
+    var selected = const AlbumBrowseSelection.grouped();
     var callbackCount = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: StatefulBuilder(
           builder: (context, setState) => AlbumArtistFilterButton(
             artistNames: const ['Aimer', '陈奕迅', '周杰伦'],
-            selectedArtistName: selected,
+            selection: selected,
             onSelected: (value) => setState(() {
               callbackCount++;
               selected = value;
@@ -99,13 +100,13 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('艺术家：无分类'));
+    await tester.tap(find.text('分类：按艺术家'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('关闭'));
     await tester.pumpAndSettle();
     expect(callbackCount, 0);
 
-    await tester.tap(find.text('艺术家：无分类'));
+    await tester.tap(find.text('分类：按艺术家'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '周');
     await tester.pump();
@@ -115,13 +116,23 @@ void main() {
     await tester.tap(find.text('周杰伦'));
     await tester.pumpAndSettle();
     expect(find.text('艺术家：周杰伦'), findsOneWidget);
+    expect(selected, const AlbumBrowseSelection.artist('周杰伦'));
     expect(callbackCount, 1);
 
     await tester.tap(find.text('艺术家：周杰伦'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('无分类'));
+    await tester.tap(find.text('分类：无分类'));
     await tester.pumpAndSettle();
-    expect(find.text('艺术家：无分类'), findsOneWidget);
+    expect(find.text('分类：无分类'), findsOneWidget);
+    expect(selected, const AlbumBrowseSelection.uncategorized());
     expect(callbackCount, 2);
+
+    await tester.tap(find.text('分类：无分类'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('分类：按艺术家').last);
+    await tester.pumpAndSettle();
+    expect(find.text('分类：按艺术家'), findsOneWidget);
+    expect(selected, const AlbumBrowseSelection.grouped());
+    expect(callbackCount, 3);
   });
 }
