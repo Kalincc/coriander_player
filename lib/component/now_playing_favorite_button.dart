@@ -25,7 +25,7 @@ class NowPlayingFavoriteButton extends StatelessWidget {
         final liked =
             currentAudio != null && (isLiked ?? _isLiked)(currentAudio);
         return IconButton(
-          tooltip: liked ? 'Remove from liked songs' : 'Add to liked songs',
+          tooltip: liked ? '从喜欢的歌曲中移除' : '添加到喜欢的歌曲',
           onPressed: currentAudio == null
               ? null
               : () async {

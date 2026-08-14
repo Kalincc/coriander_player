@@ -62,12 +62,20 @@ void main() {
         );
 
     expect(favoriteIcon().fill, 0);
+    expect(
+      tester.widget<Tooltip>(find.byType(Tooltip)).message,
+      '添加到喜欢的歌曲',
+    );
 
     await tester.tap(find.byType(IconButton));
     await tester.pump();
 
     expect(toggleCount, 1);
     expect(favoriteIcon().fill, 1);
+    expect(
+      tester.widget<Tooltip>(find.byType(Tooltip)).message,
+      '从喜欢的歌曲中移除',
+    );
 
     await tester.tap(find.byType(IconButton));
     await tester.pump();
