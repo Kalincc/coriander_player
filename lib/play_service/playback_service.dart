@@ -4,6 +4,7 @@ import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:coriander_player/play_service/playback_history_service.dart';
+import 'package:coriander_player/play_service/playback_output_mode_message.dart';
 import 'package:coriander_player/src/bass/bass_player.dart';
 import 'package:coriander_player/src/rust/api/smtc_flutter.dart';
 import 'package:coriander_player/theme_provider.dart';
@@ -108,9 +109,10 @@ class PlaybackService extends ChangeNotifier
 
   /// 独占模式
   void useExclusiveMode(bool exclusive) {
-    if (_player.useExclusiveMode(exclusive)) {
-      _wasapiExclusive.value = exclusive;
-    }
+    final result = _player.useExclusiveMode(exclusive);
+    _wasapiExclusive.value = result.actualExclusive;
+    final message = outputModeSwitchMessage(result);
+    if (message != null) showTextOnSnackBar(message);
   }
 
   Audio? nowPlaying;

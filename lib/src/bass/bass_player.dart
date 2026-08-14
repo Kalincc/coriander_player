@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/src/bass/bass_wasapi.dart' as BASS;
+import 'package:coriander_player/src/bass/output_mode_switch.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:ffi/ffi.dart' as ffi;
 import 'package:path/path.dart' as path;
@@ -43,7 +44,7 @@ const BASS_PLUGINS = [
   "BASS\\basswv.dll"
 ];
 
-class BassPlayer {
+class BassPlayer implements OutputModeOperations {
   late final ffi.DynamicLibrary _bassLib;
   late final ffi.DynamicLibrary _bassWasapiLib;
   late final BASS.Bass _bass;
@@ -54,6 +55,7 @@ class BassPlayer {
 
   /// 是否启用 wasapi 独占模式
   bool wasapiExclusive = false;
+  bool _wasapiInitialized = false;
 
   Timer? _positionUpdater;
   final _positionStreamController = StreamController<double>.broadcast();
@@ -106,8 +108,16 @@ class BassPlayer {
     if (_fstream == null) return 0;
 
     final volDsp = ffi.malloc.allocate<ffi.Float>(ffi.sizeOf<ffi.Float>());
-    _bass.BASS_ChannelGetAttribute(_fstream!, BASS.BASS_ATTRIB_VOLDSP, volDsp);
-    return volDsp.value;
+    try {
+      _bass.BASS_ChannelGetAttribute(
+        _fstream!,
+        BASS.BASS_ATTRIB_VOLDSP,
+        volDsp,
+      );
+      return volDsp.value;
+    } finally {
+      ffi.malloc.free(volDsp);
+    }
   }
 
   /// update every 33ms
@@ -229,34 +239,68 @@ class BassPlayer {
     }
   }
 
-  /// true: 操作成功；false: 操作失败
-  bool useExclusiveMode(bool exclusive) {
-    final prevState = wasapiExclusive;
-    try {
-      final lastPos = position;
-      if (prevState) {
-        _bassWasapi.BASS_WASAPI_Free();
-        _bassInit();
+  OutputModeSwitchResult useExclusiveMode(bool exclusive) {
+    final result = OutputModeSwitchCoordinator(this).switchMode(exclusive);
+    wasapiExclusive = result.actualExclusive;
+    return result;
+  }
+
+  @override
+  PlaybackSnapshot captureSnapshot() {
+    final state = switch (playerState) {
+      PlayerState.playing ||
+      PlayerState.pausedDevice ||
+      PlayerState.stalled =>
+        PlaybackSnapshotState.playing,
+      PlayerState.paused => PlaybackSnapshotState.paused,
+      _ => PlaybackSnapshotState.idle,
+    };
+    return PlaybackSnapshot(
+      path: _fPath,
+      position: Duration(milliseconds: (position * 1000).round()),
+      volume: _fstream == null
+          ? AppPreference.instance.playbackPref.volumeDsp
+          : volumeDsp,
+      state: state,
+    );
+  }
+
+  @override
+  void rebuildFromSnapshot(
+    PlaybackSnapshot snapshot, {
+    required bool exclusive,
+  }) {
+    wasapiExclusive = exclusive;
+    final sourcePath = snapshot.path;
+    if (sourcePath == null) return;
+
+    setSource(sourcePath);
+    setVolumeDsp(snapshot.volume);
+    seek(snapshot.position.inMilliseconds / 1000);
+
+    if (exclusive) {
+      _bassWasapiInit();
+      if (snapshot.state == PlaybackSnapshotState.playing) {
+        _startWasapiOutput();
+      } else {
+        _playerStateStreamController.add(playerState);
+        _positionUpdater?.cancel();
       }
-      wasapiExclusive = exclusive;
-      if (_fstream != null && _fPath != null) {
-        setSource(_fPath!);
-        setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
-        seek(lastPos);
-        start();
-      }
-      return true;
-    } catch (err) {
-      LOGGER.e("[use exclusive mode] $err");
-      showTextOnSnackBar(err.toString());
+      return;
     }
-    wasapiExclusive = prevState;
-    return false;
+
+    if (snapshot.state == PlaybackSnapshotState.playing) {
+      start();
+    } else if (snapshot.state == PlaybackSnapshotState.paused) {
+      start();
+      pause();
+    }
   }
 
   /// if setSource has been called once,
   /// it will pause current channel and free current stream.
   void setSource(String path) {
+    if (_wasapiInitialized) disposeWasapi();
     if (_fstream != null) {
       _positionUpdater?.cancel();
       freeFStream();
@@ -351,63 +395,60 @@ class BassPlayer {
           ffi.Pointer<ffi.Void>.fromAddress(_fstream!),
         ) ==
         BASS.FALSE) {
-      switch (_bass.BASS_ErrorGetCode()) {
-        case BASS.BASS_ERROR_WASAPI:
-          throw const FormatException("WASAPI is not available.");
-        case BASS.BASS_ERROR_DEVICE:
-          throw const FormatException("device is invalid.");
+      final errorCode = _bass.BASS_ErrorGetCode();
+      switch (errorCode) {
         case BASS.BASS_ERROR_ALREADY:
-          _bassWasapi.BASS_WASAPI_Free();
+          disposeWasapi();
           _bassWasapiInit();
-          break;
-        case BASS.BASS_ERROR_NOTAVAIL:
-          throw const FormatException(
-              "Exclusive mode and/or event-driven buffering is unavailable on the device, or WASAPIPROC_PUSH is unavailable on input devices and when using event-driven buffering.");
-        case BASS.BASS_ERROR_DRIVER:
-          throw const FormatException("The driver could not be initialized.");
-        case BASS.BASS_ERROR_HANDLE:
-          throw const FormatException(
-              "The BASS channel handle in user is invalid, or not of the required type.");
-        case BASS.BASS_ERROR_FORMAT:
-          throw const FormatException(
-              "The specified format (or that of the BASS channel) is not supported by the device. If the BASS_WASAPI_AUTOFORMAT flag was specified, no other format could be found either.");
-        case BASS.BASS_ERROR_BUSY:
-          throw const FormatException(
-              "The device is already in use, eg. another process may have initialized it in exclusive mode.");
+          return;
         case BASS.BASS_ERROR_INIT:
           _bassInit();
           _bassWasapiInit();
-          break;
-        case BASS.BASS_ERROR_WASAPI_BUFFER:
-          throw const FormatException(
-              "buffer is too large or small (exclusive mode only).");
-        case BASS.BASS_ERROR_WASAPI_CATEGORY:
-          throw const FormatException(
-              "The category/raw mode could not be set.");
-        case BASS.BASS_ERROR_WASAPI_DENIED:
-          throw const FormatException(
-              "Access to the device is denied. This could be due to privacy settings.");
-        case BASS.BASS_ERROR_UNKNOWN:
-          throw const FormatException("Some other mystery problem!");
+          return;
+        default:
+          throw WasapiInitializationException(
+            _exclusiveFailureReasonForBassError(errorCode),
+          );
       }
     }
+    _wasapiInitialized = true;
   }
 
-  void _start_wasapiExclusive() {
-    _bassWasapiInit();
-
+  void _startWasapiOutput() {
     if (_bassWasapi.BASS_WASAPI_Start() == BASS.FALSE) {
-      switch (_bass.BASS_ErrorGetCode()) {
-        case BASS.BASS_ERROR_INIT:
-          _bassWasapiInit();
-          _start_wasapiExclusive();
-          break;
-        case BASS.BASS_ERROR_UNKNOWN:
-          throw const FormatException("Some other mystery problem!");
-      }
+      throw WasapiInitializationException(
+        _exclusiveFailureReasonForBassError(_bass.BASS_ErrorGetCode()),
+      );
     }
     _playerStateStreamController.add(playerState);
     _positionUpdater = _getPositionUpdater();
+  }
+
+  void _startWasapiExclusive() {
+    if (!_wasapiInitialized) _bassWasapiInit();
+    _startWasapiOutput();
+  }
+
+  ExclusiveFailureReason _exclusiveFailureReasonForBassError(int errorCode) {
+    return switch (errorCode) {
+      BASS.BASS_ERROR_FORMAT => ExclusiveFailureReason.unsupportedFormat,
+      BASS.BASS_ERROR_WASAPI ||
+      BASS.BASS_ERROR_DEVICE ||
+      BASS.BASS_ERROR_NOTAVAIL ||
+      BASS.BASS_ERROR_DRIVER ||
+      BASS.BASS_ERROR_BUSY ||
+      BASS.BASS_ERROR_WASAPI_DENIED =>
+        ExclusiveFailureReason.deviceUnavailable,
+      _ => ExclusiveFailureReason.initialization,
+    };
+  }
+
+  @override
+  void disposeWasapi() {
+    _positionUpdater?.cancel();
+    _bassWasapi.BASS_WASAPI_Stop(BASS.FALSE);
+    _bassWasapi.BASS_WASAPI_Free();
+    _wasapiInitialized = false;
   }
 
   /// start/resume channel
@@ -417,7 +458,7 @@ class BassPlayer {
     if (_fstream == null) return;
 
     if (wasapiExclusive) {
-      return _start_wasapiExclusive();
+      return _startWasapiExclusive();
     }
     if (_bass.BASS_ChannelStart(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
@@ -524,9 +565,7 @@ class BassPlayer {
   ///
   /// Also free the bass.dll.
   void free() {
-    if (wasapiExclusive) {
-      _bassWasapi.BASS_WASAPI_Free();
-    }
+    if (_wasapiInitialized || wasapiExclusive) disposeWasapi();
 
     if (_bass.BASS_Free() == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
