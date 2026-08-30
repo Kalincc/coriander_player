@@ -102,7 +102,7 @@ void main() {
   test('service gathers the complete release stream before selecting', () async {
     final service = UpdateService(
       releases: () => Stream.fromIterable([
-        release('v1.5.1-kalin.10'),
+        release('v1.5.1-kalin.11'),
       ]),
     );
 
@@ -110,6 +110,6 @@ void main() {
       ForkReleaseVersion.parse(currentReleaseVersion),
     );
 
-    expect(candidate?.version, ForkReleaseVersion.parse('1.5.1-kalin.10'));
+    expect(candidate?.version, ForkReleaseVersion.parse('1.5.1-kalin.11'));
   });
 }

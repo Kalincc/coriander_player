@@ -32,7 +32,7 @@ void main() {
   });
 
   test('release constants point to the fork', () {
-    expect(currentReleaseVersion, '1.5.1-kalin.9');
+    expect(currentReleaseVersion, '1.5.1-kalin.10');
     expect(releaseRepositoryOwner, 'Kalincc');
     expect(releaseRepositoryName, 'coriander_player');
   });
