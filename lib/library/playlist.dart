@@ -43,7 +43,10 @@ Future<void> readPlaylists({LocalJsonStore? store}) async {
   playlistRevision.value++;
 }
 
-Future<void> savePlaylists({LocalJsonStore? store}) async {
+Future<void> savePlaylists({
+  LocalJsonStore? store,
+  bool rethrowOnError = false,
+}) async {
   try {
     final localStore = store ?? await _defaultStore();
     await localStore.writeAtomically(_playlistsFileName, {
@@ -52,6 +55,7 @@ Future<void> savePlaylists({LocalJsonStore? store}) async {
     });
   } catch (err, trace) {
     LOGGER.e(err, stackTrace: trace);
+    if (rethrowOnError) rethrow;
   }
 }
 

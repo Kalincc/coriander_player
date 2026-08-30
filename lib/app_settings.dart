@@ -207,7 +207,7 @@ class AppSettings {
     }
   }
 
-  Future<void> saveSettings() async {
+  Future<void> saveSettings({bool rethrowOnError = false}) async {
     try {
       final isMaximized = await windowManager.isMaximized();
       final isFullScreen = await windowManager.isFullScreen();
@@ -241,6 +241,7 @@ class AppSettings {
       output.writeAsStringSync(settingsStr);
     } catch (err, trace) {
       LOGGER.e(err, stackTrace: trace);
+      if (rethrowOnError) rethrow;
     }
   }
 }

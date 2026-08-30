@@ -69,7 +69,7 @@ Future<void> readLyricSources() async {
   }
 }
 
-Future<void> saveLyricSources() async {
+Future<void> saveLyricSources({bool rethrowOnError = false}) async {
   try {
     final supportPath = (await getAppDataDir()).path;
     final lyricSourcePath = "$supportPath\\lyric_source.json";
@@ -84,5 +84,6 @@ Future<void> saveLyricSources() async {
     await output.writeAsString(lyricSourceJson);
   } catch (err, trace) {
     LOGGER.e(err, stackTrace: trace);
+    if (rethrowOnError) rethrow;
   }
 }

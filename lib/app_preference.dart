@@ -136,7 +136,7 @@ class AppPreference {
   var nowPlayingPagePref = NowPlayingPagePreference(
       NowPlayingViewMode.withLyric, LyricTextAlign.left, 22.0, 18.0);
 
-  Future<void> save() async {
+  Future<void> save({bool rethrowOnError = false}) async {
     try {
       final supportPath = (await getAppDataDir()).path;
       final appPreferencePath = "$supportPath\\app_preference.json";
@@ -161,6 +161,7 @@ class AppPreference {
       await output.writeAsString(prefJson);
     } catch (err, trace) {
       LOGGER.e(err, stackTrace: trace);
+      if (rethrowOnError) rethrow;
     }
   }
 
