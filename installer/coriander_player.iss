@@ -35,3 +35,10 @@ Name: "{autodesktop}\Coriander Player"; Filename: "{app}\coriander_player.exe"; 
 
 [Run]
 Filename: "{app}\coriander_player.exe"; Description: "启动 Coriander Player"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\coriander_player.exe"; Flags: nowait; Check: IsAppUpdate
+
+[Code]
+function IsAppUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:CORIANDERAPPUPDATE|0}') = '1';
+end;

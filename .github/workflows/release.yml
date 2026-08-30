@@ -61,6 +61,10 @@ jobs:
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/release_helpers_test.ps1
 
+      - name: Test installer contract
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/installer_contract_test.ps1
+
       - name: Build complete portable package
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_windows.ps1 -Tag $env:RELEASE_TAG
