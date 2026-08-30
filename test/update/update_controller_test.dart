@@ -64,7 +64,8 @@ void main() {
     controller.dispose();
   });
 
-  test('portable editions do not create a download or install automatically', () async {
+  test('portable editions do not create a download or install automatically',
+      () async {
     final events = <String>[];
     final controller = controllerFixture(installed: false, events: events);
 
@@ -192,7 +193,8 @@ UpdateController controllerFixture({
     void Function(UpdateDownloadProgress progress) onProgress,
   )? download,
 }) {
-  final service = _FakeService(noUpdate ? null : candidate ?? _candidate, events);
+  final service =
+      _FakeService(noUpdate ? null : candidate ?? _candidate, events);
   final environment = InstallEnvironment(
     readInstallLocation: () => r'C:\Apps\Coriander Player',
     executablePath: () => installed

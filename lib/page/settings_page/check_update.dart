@@ -90,7 +90,9 @@ class _CheckForUpdateState extends State<CheckForUpdate> {
   Widget _buildStateView(BuildContext context) {
     final state = _state;
     return switch (state) {
-      UpdateIdle() || UpdateChecking() || UpdateCurrent() =>
+      UpdateIdle() ||
+      UpdateChecking() ||
+      UpdateCurrent() =>
         _buildPassiveState(state),
       UpdateAvailable() => _buildAvailable(context, state),
       UpdateDownloading() => _buildDownloading(state),
@@ -178,9 +180,8 @@ class _CheckForUpdateState extends State<CheckForUpdate> {
   Widget _buildDownloading(UpdateDownloading state) {
     final progress = state.progress;
     final fraction = progress.fraction;
-    final percent = fraction == null
-        ? null
-        : '${(fraction.clamp(0, 1) * 100).round()}%';
+    final percent =
+        fraction == null ? null : '${(fraction.clamp(0, 1) * 100).round()}%';
     return Card(
       margin: const EdgeInsets.only(top: 12.0),
       child: Padding(
@@ -235,8 +236,7 @@ class _CheckForUpdateState extends State<CheckForUpdate> {
                 if (state.releasePageUri != null)
                   TextButton(
                     key: const Key('open-update-release-button'),
-                    onPressed: () =>
-                        unawaited(_openUri(state.releasePageUri!)),
+                    onPressed: () => unawaited(_openUri(state.releasePageUri!)),
                     child: const Text('打开发布页面'),
                   ),
                 if (state.canRetry)

@@ -99,7 +99,8 @@ void main() {
     );
   });
 
-  test('service gathers the complete release stream before selecting', () async {
+  test('service gathers the complete release stream before selecting',
+      () async {
     final service = UpdateService(
       releases: () => Stream.fromIterable([
         release('v1.5.1-kalin.11'),

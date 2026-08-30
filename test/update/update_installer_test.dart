@@ -20,14 +20,16 @@ void main() {
     );
 
     expect(executable, r'C:\Temp\Coriander.Setup.exe');
-    expect(arguments, containsAll([
-      '/VERYSILENT',
-      '/SUPPRESSMSGBOXES',
-      '/NORESTART',
-      '/CLOSEAPPLICATIONS',
-      '/CORIANDERAPPUPDATE=1',
-      r'/LOG="C:\Temp\Coriander.Install.log"',
-    ]));
+    expect(
+        arguments,
+        containsAll([
+          '/VERYSILENT',
+          '/SUPPRESSMSGBOXES',
+          '/NORESTART',
+          '/CLOSEAPPLICATIONS',
+          '/CORIANDERAPPUPDATE=1',
+          r'/LOG="C:\Temp\Coriander.Install.log"',
+        ]));
   });
 
   test('propagates installer launch failures', () async {

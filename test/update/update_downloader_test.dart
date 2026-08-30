@@ -48,9 +48,14 @@ void main() {
 
     expect(await result.installer.readAsBytes(), installerBytes);
     expect(result.installLog.path, contains('.Install.log'));
-    expect(progress.map((item) => item.phase), contains(UpdateDownloadPhase.downloading));
+    expect(progress.map((item) => item.phase),
+        contains(UpdateDownloadPhase.downloading));
     expect(progress.last.phase, UpdateDownloadPhase.verifying);
-    expect(progress.firstWhere((item) => item.phase == UpdateDownloadPhase.downloading).fraction, 1);
+    expect(
+        progress
+            .firstWhere((item) => item.phase == UpdateDownloadPhase.downloading)
+            .fraction,
+        1);
   });
 
   test('cleans the partial installer when the hash is wrong', () async {
@@ -77,11 +82,15 @@ void main() {
       throwsA(isA<UpdateHashMismatchException>()),
     );
     expect(
-      await File('${temporaryDirectory.path}${Platform.pathSeparator}$installerName.part').exists(),
+      await File(
+              '${temporaryDirectory.path}${Platform.pathSeparator}$installerName.part')
+          .exists(),
       isFalse,
     );
     expect(
-      await File('${temporaryDirectory.path}${Platform.pathSeparator}$installerName').exists(),
+      await File(
+              '${temporaryDirectory.path}${Platform.pathSeparator}$installerName')
+          .exists(),
       isFalse,
     );
   });
@@ -165,7 +174,8 @@ UpdateCandidate _candidate(int port, String installerName) {
     releaseName: 'Coriander Player 1.5.1-kalin.10',
     releaseNotes: '',
     publishedAt: null,
-    releasePageUri: Uri.parse('https://github.com/Kalincc/coriander_player/releases/tag/v1.5.1-kalin.10'),
+    releasePageUri: Uri.parse(
+        'https://github.com/Kalincc/coriander_player/releases/tag/v1.5.1-kalin.10'),
     installerFileName: installerName,
     installerUri: Uri.parse('http://127.0.0.1:$port/$installerName'),
     checksumUri: Uri.parse('http://127.0.0.1:$port/SHA256SUMS.txt'),

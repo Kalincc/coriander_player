@@ -60,7 +60,8 @@ void main() {
 
     controller.setState(UpdateVerifying(candidate));
     await tester.pump();
-    expect(find.byKey(const Key('cancel-update-download-button')), findsNothing);
+    expect(
+        find.byKey(const Key('cancel-update-download-button')), findsNothing);
   });
 
   testWidgets('retry is shown for recoverable failures', (tester) async {

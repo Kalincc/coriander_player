@@ -229,9 +229,8 @@ class UpdateDownloader {
       );
     }
 
-    final totalBytes = response.contentLength >= 0
-        ? response.contentLength
-        : null;
+    final totalBytes =
+        response.contentLength >= 0 ? response.contentLength : null;
     var receivedBytes = 0;
     final sink = partial.openWrite();
     var sinkClosed = false;
