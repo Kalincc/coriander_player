@@ -33,10 +33,14 @@ void main() {
 
   test('installer launch failure leaves player open', () async {
     final events = <String>[];
+    var cleanupCalls = 0;
     final controller = controllerFixture(
       installed: true,
       events: events,
       launchError: StateError('cannot start'),
+      cleanup: (_) async {
+        cleanupCalls++;
+      },
     );
 
     await controller.check();
@@ -44,6 +48,7 @@ void main() {
 
     expect(controller.state, isA<UpdateFailed>());
     expect(events, isNot(contains('close')));
+    expect(cleanupCalls, 1);
     controller.dispose();
   });
 
@@ -186,6 +191,7 @@ UpdateController controllerFixture({
   bool noUpdate = false,
   Object? saveError,
   Object? launchError,
+  Future<void> Function(Directory directory)? cleanup,
   Future<VerifiedUpdate> Function(
     UpdateCandidate candidate,
     Directory directory,
@@ -234,6 +240,7 @@ UpdateController controllerFixture({
     createTemporaryDirectory: () async => Directory.systemTemp.createTemp(
       'coriander-controller-test-',
     ),
+    cleanupTemporaryDirectory: cleanup,
   );
 }
 

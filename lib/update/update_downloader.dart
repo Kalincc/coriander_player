@@ -276,11 +276,48 @@ class UpdateDownloader {
   ) async {
     _throwIfCancelled(cancellation);
     try {
-      final request = await _client.getUrl(uri);
-      _throwIfCancelled(cancellation);
-      final response = await request.close();
-      _throwIfCancelled(cancellation);
-      return response;
+      var currentUri = uri;
+      for (var redirectCount = 0; redirectCount <= 5; redirectCount++) {
+        final request = await _client.getUrl(currentUri);
+        request.followRedirects = false;
+        _throwIfCancelled(cancellation);
+        final response = await request.close();
+        _throwIfCancelled(cancellation);
+
+        final isRedirect =
+            response.statusCode >= 300 && response.statusCode < 400;
+        if (!isRedirect) {
+          if (uri.scheme == 'https' && currentUri.scheme != 'https') {
+            await response.drain<void>();
+            throw UpdateDownloadException(
+              '更新服务器重定向到了不安全地址。',
+              uri: uri,
+            );
+          }
+          return response;
+        }
+
+        final location = response.headers.value(HttpHeaders.locationHeader);
+        await response.drain<void>();
+        if (location == null || location.isEmpty) {
+          throw UpdateDownloadException(
+            '更新服务器返回了无效的重定向。',
+            uri: uri,
+          );
+        }
+
+        final nextUri = currentUri.resolve(location);
+        if (uri.scheme == 'https' && nextUri.scheme != 'https') {
+          throw UpdateDownloadException(
+            '更新服务器重定向到了不安全地址。',
+            uri: uri,
+          );
+        }
+        currentUri = nextUri;
+        _throwIfCancelled(cancellation);
+      }
+
+      throw UpdateDownloadException('更新服务器重定向次数过多。', uri: uri);
     } on UpdateCancelledException {
       rethrow;
     } on UpdateDownloadException {

@@ -5,6 +5,7 @@ import 'package:coriander_player/application_shutdown.dart';
 import 'package:coriander_player/release_info.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 
 import 'install_environment.dart';
 import 'update_downloader.dart';
@@ -80,6 +81,22 @@ abstract interface class UpdateControllerView implements Listenable {
   void cancelDownload();
 }
 
+Future<Directory> _createProductionUpdateDirectory() async {
+  final directory = Directory(
+    path.join(Directory.systemTemp.path, 'coriander-player-update'),
+  );
+  if (await directory.exists()) {
+    await directory.delete(recursive: true);
+  }
+  return directory.create(recursive: true);
+}
+
+Future<void> _deleteTemporaryDirectory(Directory directory) async {
+  if (await directory.exists()) {
+    await directory.delete(recursive: true);
+  }
+}
+
 class UpdateController extends ChangeNotifier implements UpdateControllerView {
   UpdateController({
     required UpdateService service,
@@ -88,6 +105,7 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
     required UpdateInstaller installer,
     required ApplicationShutdown shutdown,
     required Future<Directory> Function() createTemporaryDirectory,
+    Future<void> Function(Directory directory)? cleanupTemporaryDirectory,
     ForkReleaseVersion? currentVersion,
   })  : _service = service,
         _environment = environment,
@@ -95,6 +113,8 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
         _installer = installer,
         _shutdown = shutdown,
         _createTemporaryDirectory = createTemporaryDirectory,
+        _cleanupTemporaryDirectory =
+            cleanupTemporaryDirectory ?? _deleteTemporaryDirectory,
         _currentVersion =
             currentVersion ?? ForkReleaseVersion.parse(AppSettings.version);
 
@@ -105,9 +125,7 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
       downloader: UpdateDownloader(),
       installer: UpdateInstaller(),
       shutdown: ApplicationShutdown.production(),
-      createTemporaryDirectory: () => Directory.systemTemp.createTemp(
-        'coriander-player-update-',
-      ),
+      createTemporaryDirectory: _createProductionUpdateDirectory,
     );
   }
 
@@ -117,6 +135,7 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
   final UpdateInstaller _installer;
   final ApplicationShutdown _shutdown;
   final Future<Directory> Function() _createTemporaryDirectory;
+  final Future<void> Function(Directory directory) _cleanupTemporaryDirectory;
   final ForkReleaseVersion _currentVersion;
 
   UpdateState _state = const UpdateIdle();
@@ -178,9 +197,11 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
     final cancellation = UpdateCancellation();
     _cancellation = cancellation;
     final candidate = available.candidate;
+    Directory? temporaryDirectory;
+    var installerStarted = false;
 
     try {
-      final temporaryDirectory = await _createTemporaryDirectory();
+      temporaryDirectory = await _createTemporaryDirectory();
       if (!_isCurrent(generation)) return;
 
       final verified = await _downloader.downloadAndVerify(
@@ -206,6 +227,7 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
         installer: verified.installer,
         log: verified.installLog,
       );
+      installerStarted = true;
       await _shutdown.closeAfterUpdateHandoff();
     } on UpdateCancelledException {
       if (_isCurrent(generation)) _setState(const UpdateCancelled());
@@ -224,6 +246,17 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
         _setState(const UpdateFailed('更新失败，请重试。', canRetry: true));
       }
     } finally {
+      if (!installerStarted && temporaryDirectory != null) {
+        try {
+          await _cleanupTemporaryDirectory(temporaryDirectory);
+        } catch (error, stackTrace) {
+          LOGGER.e(
+            '清理更新临时文件失败。',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
       if (_isCurrent(generation)) {
         _busy = false;
         _cancellation = null;
