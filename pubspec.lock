@@ -90,7 +90,7 @@ packages:
     source: hosted
     version: "3.1.2"
   crypto:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: crypto
       sha256: "1e445881f28f22d6140f181e07737b22f1e099a5e1ff94b0af2f9e4a463f4855"
@@ -739,7 +739,7 @@ packages:
     source: hosted
     version: "3.0.4"
   win32:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: win32
       sha256: b89e6e24d1454e149ab20fbb225af58660f0c0bf4475544650700d8e2da54aef
