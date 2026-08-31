@@ -103,11 +103,11 @@ Copy-Item -Path (Join-Path $desktopLyricRelease '*') -Destination $desktopLyricT
 $bassArchives = @(
     @{ Name = 'bass24.zip'; Url = 'https://www.un4seen.com/files/bass24.zip'; Sha256 = '3A03EC9A33D0F4F9D167660DA51C8BB1432E8977496995455AB137277D69636E' },
     @{ Name = 'bassape24.zip'; Url = 'https://www.un4seen.com/files/bassape24.zip'; Sha256 = '39AED2E9AC240253DE0ECA37D261715B85CC7937504447083E2ED6690256B770' },
-    @{ Name = 'bassdsd24.zip'; Url = 'https://www.un4seen.com/files/bassdsd24.zip'; Sha256 = '480DAB317518E819A573C2BE40FD4CAFA30B41A1D6DC0D27D4F1A3BCC654D8B6' },
+    @{ Name = 'bassdsd24.zip'; Url = 'https://www.un4seen.com/files/bassdsd24.zip'; Sha256 = '9E77EF048FA9BED4466A62B61CD5781CEB932FA8BEB2E144306DCA46CCDE445F' },
     @{ Name = 'bassflac24.zip'; Url = 'https://www.un4seen.com/files/bassflac24.zip'; Sha256 = '147280210F62A80E52094E1822E73A16FD3B1A8C9C857C24DCCA7DCFCB4FFA14' },
     @{ Name = 'bassmidi24.zip'; Url = 'https://www.un4seen.com/files/bassmidi24.zip'; Sha256 = '317EC770D71266B5294543D7C87CBBB39ABA38BC8BC623AF518A96C670392234' },
     @{ Name = 'bassopus24.zip'; Url = 'https://www.un4seen.com/files/bassopus24.zip'; Sha256 = '1FB6E033289EA968CA1FD02DEA154A2E5D06BB9C2E33CDEDA277E63084D9AD20' },
-    @{ Name = 'basswv24.zip'; Url = 'https://www.un4seen.com/files/basswv24.zip'; Sha256 = '48E59F6136DB90BDE01E790273E3713AC6B0C6B1964174DC15F338F5180B9ECF' },
+    @{ Name = 'basswv24.zip'; Url = 'https://www.un4seen.com/files/basswv24.zip'; Sha256 = '813801639BB140FA8F6BAA8AA03AEAC47225E1E876FE943367F91C38F79C1ECA' },
     @{ Name = 'basswasapi24.zip'; Url = 'https://www.un4seen.com/files/basswasapi24.zip'; Sha256 = '4BA99200EBEF8DCA11CC99CBA9B5DC3E51A1C467E570DE2CBC0631A038F7EA2D' }
 )
 
