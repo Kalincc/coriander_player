@@ -13,6 +13,7 @@ export 'lyric/online_lyric_models.dart';
 Future<List<SongSearchResult>> uniSearch(
   Audio audio, {
   Iterable<OnlineLyricProvider>? providers,
+  Duration providerTimeout = const Duration(seconds: 8),
 }) async {
   final activeProviders = providers ??
       const <OnlineLyricProvider>[
@@ -21,7 +22,8 @@ Future<List<SongSearchResult>> uniSearch(
         _NeteaseOnlineLyricProvider(),
       ];
   final results = await Future.wait(
-    activeProviders.map((provider) => _searchProvider(provider, audio)),
+    activeProviders
+        .map((provider) => _searchProvider(provider, audio, providerTimeout)),
   );
   final unique = <String, SongSearchResult>{};
   for (final result in results.expand((rows) => rows)) {
@@ -46,19 +48,37 @@ Future<List<SongSearchResult>> uniSearch(
 Future<List<SongSearchResult>> _searchProvider(
   OnlineLyricProvider provider,
   Audio audio,
+  Duration providerTimeout,
+) =>
+    _searchProviderWithinBudget(provider, audio).timeout(
+      providerTimeout,
+      onTimeout: () {
+        LOGGER.e('${provider.source.name} provider search timed out');
+        return const [];
+      },
+    );
+
+Future<List<SongSearchResult>> _searchProviderWithinBudget(
+  OnlineLyricProvider provider,
+  Audio audio,
 ) async {
   final queries = musicSearchQueriesFor(audio);
   if (queries.isEmpty) return const [];
   try {
-    final first = await _safeProviderSearch(provider, queries.first, audio);
+    final first = await provider.search(queries.first, audio);
     final rows = <SongSearchResult>[...first];
     List<SongSearchResult> titleOnly = const [];
-    if (first.length < 5 && queries.length > 1) {
-      titleOnly = await _safeProviderSearch(provider, queries[1], audio);
+    final hasTitleOnlyQuery =
+        audio.artist.trim().isNotEmpty && queries.length > 1;
+    if (first.length < 5 && hasTitleOnlyQuery) {
+      titleOnly = await provider.search(queries[1], audio);
       rows.addAll(titleOnly);
     }
-    if (first.isEmpty && titleOnly.isEmpty && queries.length > 2) {
-      rows.addAll(await _safeProviderSearch(provider, queries[2], audio));
+    final albumQueryIndex = hasTitleOnlyQuery ? 2 : 1;
+    if (first.isEmpty &&
+        titleOnly.isEmpty &&
+        queries.length > albumQueryIndex) {
+      rows.addAll(await provider.search(queries[albumQueryIndex], audio));
     }
     return _validRows(rows, provider.source, audio).take(10).toList();
   } catch (err, trace) {
@@ -67,13 +87,6 @@ Future<List<SongSearchResult>> _searchProvider(
     return const [];
   }
 }
-
-Future<List<SongSearchResult>> _safeProviderSearch(
-  OnlineLyricProvider provider,
-  String query,
-  Audio audio,
-) async =>
-    (await provider.search(query, audio).timeout(const Duration(seconds: 8)));
 
 Iterable<SongSearchResult> _validRows(
   Iterable<SongSearchResult> rows,

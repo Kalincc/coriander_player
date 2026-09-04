@@ -76,6 +76,69 @@ void main() {
     expect(results, hasLength(1));
     expect(results.single.title, '红豆');
   });
+
+  test('provider fallback work shares one timeout budget', () async {
+    final audio = makeAudio('song.flac', 1);
+    final slowQueries = <String>[];
+    final watch = Stopwatch()..start();
+
+    final results = await uniSearch(
+      audio,
+      providerTimeout: const Duration(milliseconds: 60),
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (query, _) async {
+            slowQueries.add(query);
+            await Future<void>.delayed(const Duration(milliseconds: 40));
+            return const [];
+          },
+        ),
+        FakeProvider(
+          ResultSource.netease,
+          search: (_, __) async => [
+            candidate(ResultSource.netease, '红豆', '王菲', '唱游'),
+          ],
+        ),
+      ],
+    );
+    watch.stop();
+
+    expect(results, hasLength(1));
+    expect(results.single.source, ResultSource.netease);
+    expect(watch.elapsed, lessThan(const Duration(milliseconds: 110)));
+    expect(slowQueries, hasLength(2));
+  });
+
+  test('missing artist does not issue album fallback after title results',
+      () async {
+    final audio = Audio(
+      '红豆',
+      '',
+      '唱游',
+      1,
+      240,
+      null,
+      null,
+      'song.flac',
+      1,
+      1,
+      'Lofty',
+    );
+    final queries = <String>[];
+
+    await uniSearch(audio, providers: [
+      FakeProvider(
+        ResultSource.qq,
+        search: (query, _) async {
+          queries.add(query);
+          return [candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1)];
+        },
+      ),
+    ]);
+
+    expect(queries, ['红豆']);
+  });
 }
 
 class FakeProvider implements OnlineLyricProvider {
