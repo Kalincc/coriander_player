@@ -1,37 +1,30 @@
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/lyric/krc.dart';
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
 import 'package:coriander_player/lyric/qrc.dart';
+import 'package:coriander_player/lyric/music_match_normalizer.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:music_api/music_api.dart';
 
 enum ResultSource { qq, kugou, netease }
 
-double _computeScore(Audio audio, String title, String artists, String album) {
-  int maxScore = audio.title.length + audio.artist.length + audio.album.length;
-  int score = 0;
-
-  int minTitleLength = min(audio.title.length, title.length);
-  for (int i = 0; i < minTitleLength; ++i) {
-    if (audio.title[i] == title[i]) score += 1;
-  }
-
-  int minArtistLength = min(audio.artist.length, artists.length);
-  for (int i = 0; i < minArtistLength; ++i) {
-    if (audio.artist[i] == artists[i]) score += 1;
-  }
-
-  int minAlbumLength = min(audio.album.length, album.length);
-  for (int i = 0; i < minAlbumLength; ++i) {
-    if (audio.album[i] == album[i]) score += 1;
-  }
-
-  return score / maxScore;
-}
+double _computeScore(
+  Audio audio,
+  String title,
+  String artists,
+  String album, {
+  int? durationSeconds,
+}) =>
+    scoreMusicCandidate(
+      audio,
+      title: title,
+      artists: artists,
+      album: album,
+      durationSeconds: durationSeconds,
+    ).value;
 
 class SongSearchResult {
   ResultSource source;
@@ -80,7 +73,9 @@ class SongSearchResult {
       title,
       artists,
       album,
-      _computeScore(audio, title, artists, album),
+      _computeScore(audio, title, artists, album,
+          durationSeconds:
+              itemSong["interval"] is int ? itemSong["interval"] : null),
       qqSongId: itemSong["id"],
     );
   }
@@ -102,7 +97,8 @@ class SongSearchResult {
       title,
       artists,
       album,
-      _computeScore(audio, title, artists, album),
+      _computeScore(audio, title, artists, album,
+          durationSeconds: song["duration"] is int ? song["duration"] : null),
       neteaseSongId: song["id"].toString(),
     );
   }
@@ -117,14 +113,16 @@ class SongSearchResult {
       title,
       artists,
       album,
-      _computeScore(audio, title, artists, album),
+      _computeScore(audio, title, artists, album,
+          durationSeconds: info["duration"] is int ? info["duration"] : null),
       kugouSongHash: info["hash"],
     );
   }
 }
 
 Future<List<SongSearchResult>> uniSearch(Audio audio) async {
-  final query = audio.title;
+  final queries = musicSearchQueriesFor(audio);
+  final query = queries.isEmpty ? audio.title : queries.first;
   try {
     List<SongSearchResult> result = [];
 
