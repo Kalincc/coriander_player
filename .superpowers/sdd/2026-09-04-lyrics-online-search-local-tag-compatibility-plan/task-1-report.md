@@ -67,8 +67,9 @@
 - Aligned `parse_ttml_timestamp` with the Dart parser: decimal values are
   non-negative finite numbers; two-part values use integer minutes (without a
   60-minute cap) and seconds in `[0, 60)`; three-part values use integer
-  hours/minutes with minutes and seconds in `[0, 60)`. An explicit `end`
-  remains authoritative over `dur`.
+  hours/minutes with minutes and seconds in `[0, 60)`. A parseable explicit
+  `end` remains authoritative; when `end` is malformed, the parser falls back
+  to a valid positive `dur`, matching Dart's `_resolveEnd` behavior.
 - Reworked ignored-node stripping so comments, processing instructions, and
   CDATA cannot contribute pseudo-elements; added coverage for commented-out
   paragraphs and the corrected timing/attribute cases. Cargo is unavailable,
