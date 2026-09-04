@@ -1,4 +1,4 @@
-const currentReleaseVersion = '1.5.1-kalin.10';
+const currentReleaseVersion = '1.5.1-kalin.11';
 const releaseRepositoryOwner = 'Kalincc';
 const releaseRepositoryName = 'coriander_player';
 const releaseRepositoryUrl =
