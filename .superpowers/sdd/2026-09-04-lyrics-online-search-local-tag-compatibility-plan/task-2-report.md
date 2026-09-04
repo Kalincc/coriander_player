@@ -41,3 +41,16 @@ Result: `No issues found!`.
 
 - The matcher currently selects the highest-priority normalized query as its single service query; broader multi-query aggregation/deduplication remains for the later result-model work.
 - Existing Task 1 generated Windows plugin-registration modifications were left untouched and uncommitted.
+
+## Review follow-up
+
+Added regression coverage for version-preserving candidate keys, mixed version-token conflicts, normalized/pinyin partial overlap, and duration boundaries. The scorer now includes sorted version tokens in `musicCandidateKey`, treats version sets as a match only when equal (any extra or missing token is a conflict), and performs token overlap on normalized fields.
+
+The pinned `music_api_dart` fixture data shows Kugou `duration` and QQ `interval` in seconds, while NetEase `duration` is millisecond-valued (for example `213200`). NetEase integration now explicitly converts milliseconds to rounded seconds before scoring; this is documented inline in `lib/music_matcher.dart`.
+
+Review-fix TDD evidence:
+
+- Red: the added tests failed on the pre-fix implementation for key separation, mixed-version conflict handling, and the initially over-specific duration expectations.
+- Green: `flutter test test/lyric/music_match_normalizer_test.dart` passed all 6 tests after the fixes.
+- Fix commit: `d8b7c76d3f55f63f214fc058aac753e9d9580fb4` — `fix: preserve music version matching distinctions`.
+- Final focused verification: 14 tests passed across the existing lyric normalizer, new music normalizer, and matcher tests; `flutter analyze lib/lyric/music_match_normalizer.dart lib/music_matcher.dart` reported `No issues found!`.
