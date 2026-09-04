@@ -532,10 +532,11 @@ fn select_lyric_text(
         let looks_like_ttml = trimmed.starts_with('<');
         let looks_like_lrc = trimmed.find('[').and_then(|start| {
             trimmed[start + 1..]
-                .find(':')
-                .and_then(|colon| trimmed[start + 1 + colon + 1..].find(']'))
+                .find(']')
+                .map(|end| &trimmed[start + 1..start + 1 + end])
         });
-        (looks_like_ttml || looks_like_lrc.is_some()).then_some(text)
+        (looks_like_ttml || looks_like_lrc.map_or(false, |timestamp| timestamp.contains(':')))
+            .then_some(text)
     })
 }
 
@@ -551,7 +552,7 @@ fn _get_lyric_from_lofty(path: &String) -> Option<String> {
         for item in tag.items() {
             if let ItemKey::Unknown(key) = item.key() {
                 if let Some(text) = item.value().text() {
-                    candidates.push((key, text.to_string()));
+                    candidates.push((key.to_string(), text.to_string()));
                 }
             }
         }
@@ -745,6 +746,22 @@ mod tests {
         assert_eq!(
             select_lyric_text(candidates),
             Some("[00:01.00]valid lyric".to_string())
+        );
+    }
+
+    #[test]
+    fn lyric_alias_rejects_colons_outside_a_timestamp_bracket() {
+        let candidates = vec![
+            (
+                "LYRICS".to_string(),
+                "[description] notes: value]".to_string(),
+            ),
+            ("LYRIC".to_string(), "[00:02.00]valid lyric".to_string()),
+        ];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some("[00:02.00]valid lyric".to_string())
         );
     }
 

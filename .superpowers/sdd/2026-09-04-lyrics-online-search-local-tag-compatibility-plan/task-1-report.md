@@ -22,3 +22,10 @@
 
 - Rust tests and compilation remain unverified because this host has no Cargo/rustfmt toolchain. The implementation targets the locked Lofty 0.21.1 API (`Tag::items`, `TagItem::key/value`, `ItemKey::Unknown`).
 - Existing unrelated generated Windows Flutter files were already modified and were not included.
+
+## Reviewer follow-up fixes
+
+- Added `lyric_alias_rejects_colons_outside_a_timestamp_bracket`, which proves `[description] notes: value]` is rejected and selection falls through to the next valid alias.
+- Changed raw unknown-key collection to own the key with `to_string()`, avoiding a borrowed `&String` in the `(String, String)` candidate vector.
+- LRC detection now finds the first closing `]` and requires `:` within the enclosed substring.
+- Follow-up checks: `flutter test test/library/lyric_search_index_test.dart` passed (`+22`); `flutter analyze lib/library/lyric_search_index.dart test/library/lyric_search_index_test.dart` passed (`No issues found!`). Cargo remains unavailable (`cargo: The term 'cargo' is not recognized...`), so Rust compilation is still unverified.
