@@ -519,15 +519,43 @@ pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Ve
     pic_option
 }
 
+fn select_lyric_text(
+    candidates: impl IntoIterator<Item = (String, String)>,
+) -> Option<String> {
+    candidates.into_iter().find_map(|(key, text)| {
+        let normalized_key = key.to_lowercase();
+        if normalized_key != "lyrics" && normalized_key != "lyric" {
+            return None;
+        }
+
+        let trimmed = text.trim();
+        let looks_like_ttml = trimmed.starts_with('<');
+        let looks_like_lrc = trimmed.find('[').and_then(|start| {
+            trimmed[start + 1..]
+                .find(':')
+                .and_then(|colon| trimmed[start + 1 + colon + 1..].find(']'))
+        });
+        (looks_like_ttml || looks_like_lrc.is_some()).then_some(text)
+    })
+}
+
 fn _get_lyric_from_lofty(path: &String) -> Option<String> {
     if let Ok(tagged_file) = lofty::read_from_path(&path) {
         let tag = tagged_file
             .primary_tag()
             .or_else(|| tagged_file.first_tag())?;
-        let lyric_tag = tag.get(&ItemKey::Lyrics)?;
-        let lyric = lyric_tag.value().text()?;
-
-        return Some(lyric.to_string());
+        let mut candidates = Vec::new();
+        if let Some(lyric) = tag.get(&ItemKey::Lyrics).and_then(|item| item.value().text()) {
+            candidates.push(("Lyrics".to_string(), lyric.to_string()));
+        }
+        for item in tag.items() {
+            if let ItemKey::Unknown(key) = item.key() {
+                if let Some(text) = item.value().text() {
+                    candidates.push((key, text.to_string()));
+                }
+            }
+        }
+        return select_lyric_text(candidates);
     }
 
     None
@@ -706,6 +734,19 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lyric_alias_prefers_the_first_timed_value() {
+        let candidates = vec![
+            ("Lyrics".to_string(), "plain description".to_string()),
+            ("LYRIC".to_string(), "[00:01.00]valid lyric".to_string()),
+        ];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some("[00:01.00]valid lyric".to_string())
+        );
+    }
 
     #[test]
     fn empty_scan_roots_are_rejected_before_an_existing_index_is_touched() {

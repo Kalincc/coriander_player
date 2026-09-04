@@ -21,11 +21,18 @@ typedef ReadLocalLyricLines = Future<List<LyricSearchLine>> Function(
 );
 
 Future<LyricFileFingerprint> readLocalLyricFingerprint(Audio audio) async {
+  var audioModified = audio.modified;
+  try {
+    audioModified =
+        (await File(audio.path).lastModified()).millisecondsSinceEpoch ~/ 1000;
+  } on FileSystemException {
+    // Keep the library-provided timestamp when the audio file cannot be stat-ed.
+  }
   final sidecarPath = path.setExtension(audio.path, '.lrc');
   final sidecar = File(sidecarPath);
   final exists = await sidecar.exists();
   return LyricFileFingerprint(
-    audioModified: audio.modified,
+    audioModified: audioModified,
     sidecarPath: exists ? sidecarPath : null,
     sidecarModified:
         exists ? (await sidecar.lastModified()).millisecondsSinceEpoch : null,

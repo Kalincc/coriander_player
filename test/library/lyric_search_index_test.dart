@@ -128,13 +128,16 @@ void main() {
     final sidecar = File('${directory.path}${Platform.pathSeparator}song.lrc');
     await audioFile.writeAsString('audio');
     await sidecar.writeAsString('[00:01.00]first');
+    await audioFile.setLastModified(
+      DateTime.fromMillisecondsSinceEpoch(3000),
+    );
     await sidecar.setLastModified(
       DateTime.fromMillisecondsSinceEpoch(1000),
     );
     final audio = makeAudio(audioFile.path, 42);
 
     final initial = await readLocalLyricFingerprint(audio);
-    expect(initial.audioModified, 42);
+    expect(initial.audioModified, 3);
     expect(initial.sidecarPath, sidecar.path);
     expect(initial.sidecarModified, 1000);
 
