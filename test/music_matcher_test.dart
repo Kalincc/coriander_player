@@ -180,7 +180,67 @@ void main() {
     expect((lyric.lines.single as dynamic).content,
         'cached primary┃cached translation');
   });
+
+  test('automatic selection falls back when the best lyric body fails',
+      () async {
+    final audio = makeAudio('song.flac', 1);
+    final fetched = <ResultSource>[];
+
+    final lyric = await getMostMatchedLyric(audio,
+        providers: [
+          FakeProvider(
+            ResultSource.qq,
+            search: (_, __) async => [
+              candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1),
+            ],
+            fetch: (result) async {
+              fetched.add(result.source);
+              return const OnlineLyricPayload(OnlineLyricFormat.qrc, '');
+            },
+          ),
+          FakeProvider(
+            ResultSource.netease,
+            search: (_, __) async => [
+              candidate(ResultSource.netease, '红豆 (Live)', '王菲', '唱游', id: 2),
+            ],
+            fetch: (result) async {
+              fetched.add(result.source);
+              return const OnlineLyricPayload(
+                OnlineLyricFormat.lrc,
+                '[00:01.00]valid',
+              );
+            },
+          ),
+        ],
+        cache: memoryCache());
+
+    expect(lyric, isNotNull);
+    expect((lyric!.lines.single as dynamic).content, 'valid');
+    expect(fetched, [ResultSource.qq, ResultSource.netease]);
+  });
+
+  test('candidate fetch ignores an invalid provider payload', () async {
+    final lyric = await getOnlineLyric(
+      candidate: candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1),
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (_, __) async => const [],
+          fetch: (_) async =>
+              const OnlineLyricPayload(OnlineLyricFormat.qrc, ''),
+        ),
+      ],
+      cache: memoryCache(),
+    );
+
+    expect(lyric, isNull);
+  });
 }
+
+OnlineLyricCache memoryCache() => OnlineLyricCache(
+      read: () async => null,
+      write: (_) async {},
+    );
 
 class FakeProvider implements OnlineLyricProvider {
   @override

@@ -38,6 +38,17 @@ String lyricSourcePreviewText(
       '${translation == null ? '' : '┃$translation'}';
 }
 
+String lyricSourceMatchSummary(SongSearchResult result) {
+  final source = switch (result.source) {
+    ResultSource.qq => 'QQ音乐',
+    ResultSource.kugou => '酷狗音乐',
+    ResultSource.netease => '网易云音乐',
+  };
+  final reasons =
+      result.matchReasons.isEmpty ? '无' : result.matchReasons.join('、');
+  return '来源：$source · 匹配度：${(result.score * 100).round()}% · 依据：$reasons';
+}
+
 class SetLyricSourceBtn extends StatelessWidget {
   const SetLyricSourceBtn({
     required this.onMenuOpen,
@@ -231,9 +242,8 @@ class _LyricSourceTile extends StatefulWidget {
 
 class _LyricSourceTileState extends State<_LyricSourceTile> {
   late final lyric = getOnlineLyric(
-    qqSongId: widget.searchResult.qqSongId,
-    kugouSongHash: widget.searchResult.kugouSongHash,
-    neteaseSongId: widget.searchResult.neteaseSongId,
+    audio: widget.audio,
+    candidate: widget.searchResult,
   );
   @override
   Widget build(BuildContext context) {
@@ -256,7 +266,7 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
         ConnectionState.active => loadingWidget,
         ConnectionState.done =>
           lyricSnapshot.data == null || lyricSnapshot.data!.lines.isEmpty
-              ? const SizedBox.shrink()
+              ? buildFailedTile(widget.searchResult)
               : buildTile(
                   context,
                   widget.audio,
@@ -266,6 +276,21 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
       },
     );
   }
+
+  Widget buildFailedTile(SongSearchResult searchResult) => ListTile(
+        enabled: false,
+        leading: const Icon(Symbols.error),
+        title: Text(
+          searchResult.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          '${lyricSourceMatchSummary(searchResult)}\n歌词加载失败',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      );
 
   Widget buildTile(
     BuildContext context,
@@ -305,6 +330,11 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
           ),
           Text(
             "${searchResult.artists} - ${searchResult.album}",
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            lyricSourceMatchSummary(searchResult),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
