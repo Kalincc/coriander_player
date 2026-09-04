@@ -98,7 +98,10 @@ class SongSearchResult {
       artists,
       album,
       _computeScore(audio, title, artists, album,
-          durationSeconds: song["duration"] is int ? song["duration"] : null),
+          // NetEase's `duration` field is milliseconds; scorer expects seconds.
+          durationSeconds: song["duration"] is int
+              ? ((song["duration"] as int) / 1000).round()
+              : null),
       neteaseSongId: song["id"].toString(),
     );
   }

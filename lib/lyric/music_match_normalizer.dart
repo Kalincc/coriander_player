@@ -61,8 +61,8 @@ double _similarity(String expected, String actual) {
   if (a.isEmpty || b.isEmpty) return 0;
   if (a.any((x) => b.contains(x))) return 1;
   if (a.any((x) => b.any((y) => x.contains(y) || y.contains(x)))) return .7;
-  final at = expected.split(' ').where((x) => x.isNotEmpty).toSet();
-  final bt = actual.split(' ').where((x) => x.isNotEmpty).toSet();
+  final at = _basic(expected).split(' ').where((x) => x.isNotEmpty).toSet();
+  final bt = _basic(actual).split(' ').where((x) => x.isNotEmpty).toSet();
   if (at.isEmpty || bt.isEmpty) return 0;
   return at.intersection(bt).length / at.union(bt).length;
 }
@@ -102,8 +102,8 @@ MusicMatchScore scoreMusicCandidate(
   var adjustment = 0.0;
   final reasons = <String>[];
   if (expectedVersions.isNotEmpty &&
-      candidateVersions.isNotEmpty &&
-      expectedVersions.intersection(candidateVersions).isNotEmpty) {
+      expectedVersions.length == candidateVersions.length &&
+      expectedVersions.containsAll(candidateVersions)) {
     adjustment = .05;
     reasons.add('版本匹配');
   } else if (expectedVersions.length != candidateVersions.length ||
@@ -127,5 +127,12 @@ String musicCandidateKey({
   required String title,
   required String artists,
   required String album,
-}) =>
-    [_titleCore(title), _basic(artists), _basic(album)].join('\u001f');
+}) {
+  final versions = _versions(title).toList()..sort();
+  return [
+    _titleCore(title),
+    versions.join(' '),
+    _basic(artists),
+    _basic(album),
+  ].join('\u001f');
+}

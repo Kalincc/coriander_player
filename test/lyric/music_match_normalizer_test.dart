@@ -57,6 +57,72 @@ void main() {
     expect(exact.value, greaterThan(live.value));
     expect(live.reasons, contains('版本不一致'));
   });
+
+  test('candidate keys retain version distinctions', () {
+    expect(
+      musicCandidateKey(title: 'Song', artists: 'Artist', album: 'Album'),
+      isNot(musicCandidateKey(
+          title: 'Song (Live)', artists: 'Artist', album: 'Album')),
+    );
+    expect(
+      musicCandidateKey(
+          title: 'Song (Live)', artists: 'Artist', album: 'Album'),
+      isNot(musicCandidateKey(
+          title: 'Song Remix', artists: 'Artist', album: 'Album')),
+    );
+  });
+
+  test('extra version token is a conflict even when one token matches', () {
+    final audio = makeAudio('song.flac', 1)
+      ..title = 'Song (Live)'
+      ..artist = 'Artist'
+      ..album = 'Album';
+
+    final score = scoreMusicCandidate(
+      audio,
+      title: 'Song (Live Remix)',
+      artists: 'Artist',
+      album: 'Album',
+    );
+
+    expect(score.reasons, contains('版本不一致'));
+    expect(score.reasons, isNot(contains('版本匹配')));
+  });
+
+  test('partial artist overlap uses normalized punctuation and pinyin forms',
+      () {
+    final audio = makeAudio('song.flac', 1)
+      ..title = 'Song'
+      ..artist = '王菲、张三'
+      ..album = 'Album';
+
+    final score = scoreMusicCandidate(
+      audio,
+      title: 'Song',
+      artists: 'wang fei / 李四',
+      album: 'Album',
+    );
+
+    expect(score.value, greaterThan(.6));
+  });
+
+  test('duration boundaries are two seconds and five seconds', () {
+    final audio = makeAudio('song.flac', 1)
+      ..title = 'Song'
+      ..artist = 'Artist'
+      ..album = 'Album';
+
+    final withinTwo = scoreMusicCandidate(audio,
+        title: 'Song', artists: 'Artist', album: 'Album', durationSeconds: 12);
+    final withinFive = scoreMusicCandidate(audio,
+        title: 'Song', artists: 'Artist', album: 'Album', durationSeconds: 15);
+    final outside = scoreMusicCandidate(audio,
+        title: 'Song', artists: 'Artist', album: 'Album', durationSeconds: 16);
+
+    expect(withinTwo.value, closeTo(1.0, 1e-9));
+    expect(withinFive.value, closeTo(.95, 1e-9));
+    expect(outside.value, closeTo(.9, 1e-9));
+  });
 }
 
 class _TestRustLibApi implements RustLibApi {
