@@ -241,19 +241,19 @@ void main() {
       () async {
     final cache = memoryCache();
     final audio = makeAudio('offline.flac', 2);
-    await getOnlineLyric(
-      audio: audio,
-      candidate: candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1),
-      providers: [
-        FakeProvider(
-          ResultSource.qq,
-          search: (_, __) async => const [],
-          fetch: (_) async => const OnlineLyricPayload(
-              OnlineLyricFormat.lrc, '[00:01.00]cached'),
-        ),
-      ],
-      cache: cache,
-    );
+    await cache.writeEntry(OnlineLyricCacheEntry(
+      key: 'qq:1',
+      audioFingerprint: audioLyricFingerprint(audio),
+      payload: const OnlineLyricPayload(
+        OnlineLyricFormat.lrc,
+        '[00:01.00]cached',
+      ),
+      title: audio.title,
+      artists: audio.artist,
+      album: audio.album,
+      score: .9,
+      fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
+    ));
 
     final lyric = await getMostMatchedLyric(
       audio,
@@ -268,6 +268,49 @@ void main() {
 
     expect(lyric, isNotNull);
     expect((lyric!.lines.single as dynamic).content, 'cached');
+  });
+
+  test('automatic selection skips low-scored cached lyrics before searching',
+      () async {
+    final cache = memoryCache();
+    final audio = makeAudio('low-score-cache.flac', 8);
+    await cache.writeEntry(OnlineLyricCacheEntry(
+      key: 'qq:1',
+      audioFingerprint: audioLyricFingerprint(audio),
+      payload: const OnlineLyricPayload(
+        OnlineLyricFormat.lrc,
+        '[00:01.00]low confidence cache',
+      ),
+      title: audio.title,
+      artists: audio.artist,
+      album: audio.album,
+      score: .1,
+      fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
+    ));
+    var fetches = 0;
+
+    final lyric = await getMostMatchedLyric(
+      audio,
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (_, __) async => [
+            candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1),
+          ],
+          fetch: (_) async {
+            fetches++;
+            return const OnlineLyricPayload(
+              OnlineLyricFormat.lrc,
+              '[00:01.00]searched lyric',
+            );
+          },
+        ),
+      ],
+      cache: cache,
+    );
+
+    expect(fetches, 1);
+    expect((lyric!.lines.single as dynamic).content, 'searched lyric');
   });
 
   test('an unresponsive lyric body advances to the next candidate', () async {

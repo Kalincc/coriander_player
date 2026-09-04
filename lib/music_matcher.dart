@@ -11,6 +11,8 @@ import 'package:music_api/music_api.dart';
 
 export 'lyric/online_lyric_models.dart';
 
+const _automaticMatchScoreFloor = .62;
+
 Future<List<SongSearchResult>> uniSearch(
   Audio audio, {
   Iterable<OnlineLyricProvider>? providers,
@@ -316,6 +318,7 @@ Future<Lyric?> getOnlineLyric({
   String? neteaseSongId,
   Iterable<OnlineLyricProvider>? providers,
   OnlineLyricCache? cache,
+  double? minimumCacheScore,
 }) async {
   final request = candidate ??
       _candidateForProviderId(
@@ -337,10 +340,13 @@ Future<Lyric?> getOnlineLyric({
   final key = '${request.source.name}:$providerId';
   final cached =
       await activeCache.readEntry(key, audioFingerprint: fingerprint);
-  if (cached != null) {
+  if (cached != null &&
+      (minimumCacheScore == null || cached.score >= minimumCacheScore)) {
     final lyric = parseOnlineLyricPayload(cached.payload);
     if (lyric != null) return lyric;
     LOGGER.e('Ignoring invalid cached ${request.source.name} lyric');
+  } else if (cached != null) {
+    LOGGER.e('Ignoring low-score cached ${request.source.name} lyric');
   }
 
   OnlineLyricPayload? payload;
@@ -390,6 +396,7 @@ Future<Lyric?> getMostMatchedLyric(
   try {
     for (final entry
         in await activeCache.readEntriesForAudioFingerprint(fingerprint)) {
+      if (entry.score < _automaticMatchScoreFloor) continue;
       final lyric = parseOnlineLyricPayload(entry.payload);
       if (lyric != null && lyric.lines.isNotEmpty) return lyric;
     }
@@ -399,13 +406,14 @@ Future<Lyric?> getMostMatchedLyric(
 
   final candidates = await uniSearch(audio, providers: activeProviders);
   for (final candidate in candidates.take(8)) {
-    if (candidate.score < .62) break;
+    if (candidate.score < _automaticMatchScoreFloor) break;
     try {
       final lyric = await getOnlineLyric(
         audio: audio,
         candidate: candidate,
         providers: activeProviders,
         cache: activeCache,
+        minimumCacheScore: _automaticMatchScoreFloor,
       );
       if (lyric != null && lyric.lines.isNotEmpty) return lyric;
     } catch (error, trace) {
