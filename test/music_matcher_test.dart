@@ -1,4 +1,5 @@
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/lyric/online_lyric_cache.dart';
 import 'package:coriander_player/music_matcher.dart';
 import 'package:coriander_player/lyric/music_match_normalizer.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -138,6 +139,39 @@ void main() {
     ]);
 
     expect(queries, ['红豆']);
+  });
+
+  test('online lyric loads a matching cached payload before any provider call',
+      () async {
+    String? contents;
+    final cache = OnlineLyricCache(
+      read: () async => contents,
+      write: (value) async => contents = value,
+    );
+    final audio = makeAudio('song.flac', 1);
+    await cache.writeEntry(OnlineLyricCacheEntry(
+      key: 'qq:1',
+      audioFingerprint: audioLyricFingerprint(audio),
+      payload: const OnlineLyricPayload(
+        OnlineLyricFormat.lrc,
+        '[00:01.00]cached primary',
+        '[00:01.00]cached translation',
+      ),
+      title: audio.title,
+      artists: audio.artist,
+      album: audio.album,
+      score: 1,
+      fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
+    ));
+
+    final lyric = await getOnlineLyric(
+      qqSongId: 1,
+      audio: audio,
+      cache: cache,
+    );
+
+    expect(lyric, isNotNull);
+    expect(lyric!.lines, hasLength(1));
   });
 }
 

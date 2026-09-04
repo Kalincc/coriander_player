@@ -3,6 +3,7 @@ import 'package:coriander_player/lyric/krc.dart';
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
 import 'package:coriander_player/lyric/online_lyric_models.dart';
+import 'package:coriander_player/lyric/online_lyric_cache.dart';
 import 'package:coriander_player/lyric/qrc.dart';
 import 'package:coriander_player/lyric/music_match_normalizer.dart';
 import 'package:coriander_player/utils.dart';
@@ -240,69 +241,119 @@ List<SongSearchResult> _mapRows(
   return results;
 }
 
-Future<Lrc?> _getNeteaseUnsyncLyric(String neteaseSongId) async {
-  try {
-    final answer = await Netease.lyric(id: neteaseSongId);
-    final lrcText = answer.data["lrc"]["lyric"];
-    if (lrcText is String) {
-      final lrcTrans = answer.data["tlyric"]["lyric"];
-      return Lrc.fromLrcText(
-        lrcText + lrcTrans,
-        LrcSource.web,
-        separator: "┃",
-      );
-    }
-  } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
-  }
+String audioLyricFingerprint(Audio audio) =>
+    '${audio.path}|${audio.modified}|${audio.title}|${audio.artist}|${audio.album}';
 
-  return null;
+Lyric? parseOnlineLyricPayload(OnlineLyricPayload payload) {
+  if (payload.lyricText.trim().isEmpty) return null;
+  try {
+    final lyric = switch (payload.format) {
+      OnlineLyricFormat.lrc => Lrc.fromLrcText(
+          payload.translationText?.trim().isNotEmpty == true
+              ? '${payload.lyricText}\n${payload.translationText}'
+              : payload.lyricText,
+          LrcSource.web,
+          separator: '┃',
+        ),
+      OnlineLyricFormat.krc => Krc.fromKrcText(payload.lyricText),
+      OnlineLyricFormat.qrc =>
+        Qrc.fromQrcText(payload.lyricText, payload.translationText),
+    };
+    return lyric != null && lyric.lines.isNotEmpty ? lyric : null;
+  } catch (error, trace) {
+    LOGGER.e('Could not parse online lyric payload: $error', stackTrace: trace);
+    return null;
+  }
 }
 
-Future<Qrc?> _getQQSyncLyric(int qqSongId) async {
+Future<OnlineLyricPayload?> _fetchOnlineLyricPayload(
+  ResultSource source,
+  String providerId,
+) async {
   try {
-    final answer = await QQ.songLyric3(songId: qqSongId);
-    final qrcText = answer.data["lyric"];
-    if (qrcText is String) {
-      final qrcTransRawStr = answer.data["trans"];
-      if (qrcTransRawStr is String) {
-        return Qrc.fromQrcText(qrcText, qrcTransRawStr);
-      }
-      return Qrc.fromQrcText(qrcText);
+    switch (source) {
+      case ResultSource.qq:
+        final answer = await QQ.songLyric3(songId: int.parse(providerId));
+        final data = _map(answer.data);
+        final lyric = data['lyric'];
+        return lyric is String && lyric.isNotEmpty
+            ? OnlineLyricPayload(
+                OnlineLyricFormat.qrc,
+                lyric,
+                data['trans'] is String ? data['trans'] as String : null,
+              )
+            : null;
+      case ResultSource.kugou:
+        final answer = await KuGou.krc(hash: providerId);
+        final lyric = _map(answer.data)['lyric'];
+        return lyric is String && lyric.isNotEmpty
+            ? OnlineLyricPayload(OnlineLyricFormat.krc, lyric)
+            : null;
+      case ResultSource.netease:
+        final answer = await Netease.lyric(id: providerId);
+        final data = _map(answer.data);
+        final lyric = _map(data['lrc'])['lyric'];
+        return lyric is String && lyric.isNotEmpty
+            ? OnlineLyricPayload(
+                OnlineLyricFormat.lrc,
+                lyric,
+                _map(data['tlyric'])['lyric'] is String
+                    ? _map(data['tlyric'])['lyric'] as String
+                    : null,
+              )
+            : null;
     }
-  } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+  } catch (error, trace) {
+    LOGGER.e('Could not fetch ${source.name} lyric: $error', stackTrace: trace);
+    return null;
   }
-
-  return null;
-}
-
-Future<Krc?> _getKugouSyncLyric(String kugouSongHash) async {
-  try {
-    final answer = await KuGou.krc(hash: kugouSongHash);
-    final krcText = answer.data["lyric"];
-    if (krcText is String) {
-      return Krc.fromKrcText(krcText);
-    }
-  } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
-  }
-
-  return null;
 }
 
 Future<Lyric?> getOnlineLyric({
   int? qqSongId,
   String? kugouSongHash,
   String? neteaseSongId,
+  Audio? audio,
+  OnlineLyricCache? cache,
 }) async {
-  Lyric? lyric;
+  late final ResultSource source;
+  late final String providerId;
   if (qqSongId != null) {
-    lyric = (await _getQQSyncLyric(qqSongId));
+    source = ResultSource.qq;
+    providerId = qqSongId.toString();
   } else if (kugouSongHash != null) {
-    lyric = (await _getKugouSyncLyric(kugouSongHash));
+    source = ResultSource.kugou;
+    providerId = kugouSongHash;
   } else if (neteaseSongId != null) {
-    lyric = await _getNeteaseUnsyncLyric(neteaseSongId);
+    source = ResultSource.netease;
+    providerId = neteaseSongId;
+  } else {
+    return null;
+  }
+  final activeCache = cache ?? OnlineLyricCache.defaults();
+  final fingerprint = audio == null ? '' : audioLyricFingerprint(audio);
+  final key = '${source.name}:$providerId';
+  final cached =
+      await activeCache.readEntry(key, audioFingerprint: fingerprint);
+  if (cached != null) return parseOnlineLyricPayload(cached.payload);
+
+  final payload = await _fetchOnlineLyricPayload(source, providerId);
+  if (payload == null) return null;
+  final lyric = parseOnlineLyricPayload(payload);
+  if (lyric == null) return null;
+  try {
+    await activeCache.writeEntry(OnlineLyricCacheEntry(
+      key: key,
+      audioFingerprint: fingerprint,
+      payload: payload,
+      title: audio?.title ?? '',
+      artists: audio?.artist ?? '',
+      album: audio?.album ?? '',
+      score: 0,
+      fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
+    ));
+  } catch (error, trace) {
+    LOGGER.e('Could not cache ${source.name} lyric: $error', stackTrace: trace);
   }
   return lyric;
 }
