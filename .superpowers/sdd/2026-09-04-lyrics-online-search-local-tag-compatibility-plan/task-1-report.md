@@ -36,3 +36,9 @@
 - LRC recognition now scans every line and bracket pair, requiring numeric minutes and finite seconds in the range `[0, 60)`; metadata such as `[ti:Song]` is rejected.
 - TTML recognition now requires a `<tt>` root delimiter, `<body`, and `</tt>` before selecting the candidate.
 - Final checks: `flutter test test/library/lyric_search_index_test.dart` passed (`00:00 +22: All tests passed!`); Flutter analyze passed (`No issues found!`). `cargo test --manifest-path rust/Cargo.toml tag_reader -- --nocapture` remains blocked because Cargo is not installed.
+
+## Second reviewer addendum
+
+- Added regressions for BOM/XML declaration plus namespaced `<tt>` documents, and for empty `<body>` falling through to a valid alias.
+- TTML preselection now skips BOM/XML declarations, accepts `tt` or namespaced `*:tt` roots and namespaced body tags, requires matching closing tags and non-empty body content, and therefore does not mask later aliases or sidecar fallback.
+- Verification: `flutter test test/library/lyric_search_index_test.dart` passed (`00:00 +22: All tests passed!`). Cargo remains unavailable, so Rust tests/compile are unverified.

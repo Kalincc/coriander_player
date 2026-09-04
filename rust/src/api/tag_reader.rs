@@ -529,14 +529,44 @@ fn select_lyric_text(
         }
 
         let trimmed = text.trim();
-        let lowered = trimmed.to_lowercase();
-        let looks_like_ttml = lowered.starts_with("<tt")
-            && lowered
-                .chars()
-                .nth(3)
-                .map_or(false, |delimiter| delimiter.is_whitespace() || delimiter == '>')
-            && lowered.contains("<body")
-            && lowered.contains("</tt>");
+        let mut ttml_source = trimmed.trim_start_matches('\u{feff}').trim_start();
+        while ttml_source.starts_with("<?") {
+            let Some(end) = ttml_source.find("?>") else {
+                break;
+            };
+            ttml_source = ttml_source[end + 2..].trim_start();
+        }
+        let lowered = ttml_source.to_lowercase();
+        let root_name = lowered
+            .strip_prefix('<')
+            .and_then(|source| source.split(|character: char| character.is_whitespace() || character == '>').next())
+            .unwrap_or("");
+        let root_is_tt = root_name == "tt"
+            || root_name
+                .rsplit_once(':')
+                .map_or(false, |(_, local_name)| local_name == "tt");
+        let body_name = lowered.match_indices('<').find_map(|(start, _)| {
+            let token = lowered[start + 1..]
+                .split(|character: char| character.is_whitespace() || character == '>')
+                .next()
+                .unwrap_or("");
+            (token == "body" || token.ends_with(":body")).then_some(token)
+        });
+        let body_content_nonempty = body_name.map_or(false, |body| {
+            lowered
+                .find(&format!("<{}", body))
+                .and_then(|start| {
+                    lowered[start..].find('>').and_then(|end| {
+                        lowered[start + end + 1..]
+                            .find(&format!("</{}>", body))
+                            .map(|body_end| body_end > 0)
+                    })
+                })
+                .unwrap_or(false)
+        });
+        let looks_like_ttml = root_is_tt
+            && lowered.contains(&format!("</{}>", root_name))
+            && body_content_nonempty;
         let looks_like_lrc = trimmed.lines().any(|line| {
             let mut remaining = line;
             while let Some(start) = remaining.find('[') {
@@ -811,6 +841,32 @@ mod tests {
         assert_eq!(
             select_lyric_text(candidates),
             Some("[00:03.00]valid lyric".to_string())
+        );
+    }
+
+    #[test]
+    fn lyric_alias_accepts_xml_declaration_bom_and_namespaced_ttml() {
+        let candidates = vec![(
+            "Lyrics".to_string(),
+            "\u{feff}<?xml version=\"1.0\"?><ly:tt xmlns:ly=\"urn:ttml\"><ly:body><ly:p begin=\"1\">valid</ly:p></ly:body></ly:tt>".to_string(),
+        )];
+
+        assert_eq!(select_lyric_text(candidates).is_some(), true);
+    }
+
+    #[test]
+    fn lyric_alias_rejects_empty_ttml_and_falls_through() {
+        let candidates = vec![
+            (
+                "Lyrics".to_string(),
+                "<tt><body></body></tt>".to_string(),
+            ),
+            ("LYRIC".to_string(), "[00:04.00]valid lyric".to_string()),
+        ];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some("[00:04.00]valid lyric".to_string())
         );
     }
 
