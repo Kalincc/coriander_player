@@ -42,3 +42,9 @@
 - Added regressions for BOM/XML declaration plus namespaced `<tt>` documents, and for empty `<body>` falling through to a valid alias.
 - TTML preselection now skips BOM/XML declarations, accepts `tt` or namespaced `*:tt` roots and namespaced body tags, requires matching closing tags and non-empty body content, and therefore does not mask later aliases or sidecar fallback.
 - Verification: `flutter test test/library/lyric_search_index_test.dart` passed (`00:00 +22: All tests passed!`). Cargo remains unavailable, so Rust tests/compile are unverified.
+
+## Third reviewer addendum
+
+- Added regressions for whitespace-only TTML, div-only body, and paragraphs missing `end`/`dur`; corrected the positive namespaced fixture with a valid end time.
+- TTML preselection now requires a namespace-independent non-empty `<p>` with numeric `begin`, a valid positive `end` or `dur`, a matching closing tag, and visible text. Invalid candidates continue to later aliases/fallback.
+- Verification: `flutter test test/library/lyric_search_index_test.dart` passed (`00:00 +22: All tests passed!`). Cargo is unavailable (`cargo: The term 'cargo' is not recognized...`), so Rust tests/compile remain unverified.

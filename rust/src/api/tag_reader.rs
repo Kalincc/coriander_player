@@ -519,6 +519,46 @@ pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Ve
     pic_option
 }
 
+fn has_valid_ttml_paragraph(xml: &str) -> bool {
+    xml.match_indices('<').any(|(start, _)| {
+        let rest = &xml[start + 1..];
+        if rest.starts_with('/') {
+            return false;
+        }
+        let Some(end) = rest.find('>') else {
+            return false;
+        };
+        let opening = &rest[..end];
+        let name = opening
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .trim_end_matches('/');
+        if name != "p" && !name.ends_with(":p") {
+            return false;
+        }
+        let attribute = |key: &str| {
+            opening
+                .split_whitespace()
+                .find_map(|part| part.strip_prefix(&format!("{}=\"", key)))
+                .and_then(|value| value.split('"').next())
+        };
+        let Some(begin) = attribute("begin").and_then(|value| value.trim_end_matches('s').parse::<f64>().ok()) else {
+            return false;
+        };
+        let end_time = attribute("end").and_then(|value| value.trim_end_matches('s').parse::<f64>().ok());
+        let duration = attribute("dur").and_then(|value| value.trim_end_matches('s').parse::<f64>().ok());
+        let timing_valid = end_time.map_or(false, |value| value.is_finite() && value > begin)
+            || duration.map_or(false, |value| value.is_finite() && value > 0.0);
+        let closing = format!("</{}>", name);
+        let Some(close) = xml[start + end + 2..].find(&closing) else {
+            return false;
+        };
+        let visible_text = &xml[start + end + 2..start + end + 2 + close];
+        timing_valid && visible_text.split('<').any(|part| !part.trim().is_empty())
+    })
+}
+
 fn select_lyric_text(
     candidates: impl IntoIterator<Item = (String, String)>,
 ) -> Option<String> {
@@ -566,7 +606,8 @@ fn select_lyric_text(
         });
         let looks_like_ttml = root_is_tt
             && lowered.contains(&format!("</{}>", root_name))
-            && body_content_nonempty;
+            && body_content_nonempty
+            && has_valid_ttml_paragraph(&lowered);
         let looks_like_lrc = trimmed.lines().any(|line| {
             let mut remaining = line;
             while let Some(start) = remaining.find('[') {
@@ -848,7 +889,7 @@ mod tests {
     fn lyric_alias_accepts_xml_declaration_bom_and_namespaced_ttml() {
         let candidates = vec![(
             "Lyrics".to_string(),
-            "\u{feff}<?xml version=\"1.0\"?><ly:tt xmlns:ly=\"urn:ttml\"><ly:body><ly:p begin=\"1\">valid</ly:p></ly:body></ly:tt>".to_string(),
+            "\u{feff}<?xml version=\"1.0\"?><ly:tt xmlns:ly=\"urn:ttml\"><ly:body><ly:p begin=\"1\" end=\"2\">valid</ly:p></ly:body></ly:tt>".to_string(),
         )];
 
         assert_eq!(select_lyric_text(candidates).is_some(), true);
@@ -867,6 +908,24 @@ mod tests {
         assert_eq!(
             select_lyric_text(candidates),
             Some("[00:04.00]valid lyric".to_string())
+        );
+    }
+
+    #[test]
+    fn lyric_alias_rejects_structurally_empty_ttml_and_falls_through() {
+        let candidates = vec![
+            ("Lyrics".to_string(), "<tt><body> </body></tt>".to_string()),
+            ("LYRIC".to_string(), "<tt><body><div/></body></tt>".to_string()),
+            (
+                "LYRICS".to_string(),
+                "<tt><body><p begin=\"1\">valid</p></body></tt>".to_string(),
+            ),
+            ("LYRIC".to_string(), "[00:05.00]valid lyric".to_string()),
+        ];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some("[00:05.00]valid lyric".to_string())
         );
     }
 
