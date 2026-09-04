@@ -529,14 +529,36 @@ fn select_lyric_text(
         }
 
         let trimmed = text.trim();
-        let looks_like_ttml = trimmed.starts_with('<');
-        let looks_like_lrc = trimmed.find('[').and_then(|start| {
-            trimmed[start + 1..]
-                .find(']')
-                .map(|end| &trimmed[start + 1..start + 1 + end])
+        let lowered = trimmed.to_lowercase();
+        let looks_like_ttml = lowered.starts_with("<tt")
+            && lowered
+                .chars()
+                .nth(3)
+                .map_or(false, |delimiter| delimiter.is_whitespace() || delimiter == '>')
+            && lowered.contains("<body")
+            && lowered.contains("</tt>");
+        let looks_like_lrc = trimmed.lines().any(|line| {
+            let mut remaining = line;
+            while let Some(start) = remaining.find('[') {
+                let after_open = &remaining[start + 1..];
+                let Some(end) = after_open.find(']') else {
+                    break;
+                };
+                let timestamp = &after_open[..end];
+                if let Some((minutes, seconds)) = timestamp.split_once(':') {
+                    let valid_minutes = minutes.parse::<u64>().is_ok();
+                    let valid_seconds = seconds
+                        .parse::<f64>()
+                        .map_or(false, |value| value.is_finite() && (0.0..60.0).contains(&value));
+                    if valid_minutes && valid_seconds {
+                        return true;
+                    }
+                }
+                remaining = &after_open[end + 1..];
+            }
+            false
         });
-        (looks_like_ttml || looks_like_lrc.map_or(false, |timestamp| timestamp.contains(':')))
-            .then_some(text)
+        (looks_like_ttml || looks_like_lrc).then_some(text)
     })
 }
 
@@ -762,6 +784,33 @@ mod tests {
         assert_eq!(
             select_lyric_text(candidates),
             Some("[00:02.00]valid lyric".to_string())
+        );
+    }
+
+    #[test]
+    fn lyric_alias_scans_past_non_timestamp_brackets() {
+        let candidates = vec![(
+            "LYRICS".to_string(),
+            "[Chorus]\n[00:01.00]valid lyric".to_string(),
+        )];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some("[Chorus]\n[00:01.00]valid lyric".to_string())
+        );
+    }
+
+    #[test]
+    fn lyric_alias_rejects_metadata_and_invalid_ttml() {
+        let candidates = vec![
+            ("Lyrics".to_string(), "[ti:Song]".to_string()),
+            ("LYRIC".to_string(), "<not-ttml".to_string()),
+            ("LYRICS".to_string(), "[00:03.00]valid lyric".to_string()),
+        ];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some("[00:03.00]valid lyric".to_string())
         );
     }
 

@@ -29,3 +29,10 @@
 - Changed raw unknown-key collection to own the key with `to_string()`, avoiding a borrowed `&String` in the `(String, String)` candidate vector.
 - LRC detection now finds the first closing `]` and requires `:` within the enclosed substring.
 - Follow-up checks: `flutter test test/library/lyric_search_index_test.dart` passed (`+22`); `flutter analyze lib/library/lyric_search_index.dart test/library/lyric_search_index_test.dart` passed (`No issues found!`). Cargo remains unavailable (`cargo: The term 'cargo' is not recognized...`), so Rust compilation is still unverified.
+
+## Final reviewer addendum
+
+- Added regression coverage for metadata timestamps (`[ti:Song]`), leading non-timestamp brackets followed by a valid timestamp, and malformed TTML falling through to a later valid alias.
+- LRC recognition now scans every line and bracket pair, requiring numeric minutes and finite seconds in the range `[0, 60)`; metadata such as `[ti:Song]` is rejected.
+- TTML recognition now requires a `<tt>` root delimiter, `<body`, and `</tt>` before selecting the candidate.
+- Final checks: `flutter test test/library/lyric_search_index_test.dart` passed (`00:00 +22: All tests passed!`); Flutter analyze passed (`No issues found!`). `cargo test --manifest-path rust/Cargo.toml tag_reader -- --nocapture` remains blocked because Cargo is not installed.
