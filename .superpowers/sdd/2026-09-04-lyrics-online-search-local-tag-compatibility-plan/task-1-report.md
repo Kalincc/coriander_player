@@ -15,7 +15,8 @@
 
 ## Commit
 
-Pending commit after report creation.
+- Implementation commit: `1478d6ab7d79f0fc71150aa8aaa49b5b87f60a33`.
+- This report update is committed separately so the implementation hash remains stable.
 
 ## Concerns
 
