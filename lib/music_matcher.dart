@@ -1,171 +1,230 @@
-import 'dart:convert';
-
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/lyric/krc.dart';
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
+import 'package:coriander_player/lyric/online_lyric_models.dart';
 import 'package:coriander_player/lyric/qrc.dart';
 import 'package:coriander_player/lyric/music_match_normalizer.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:music_api/music_api.dart';
 
-enum ResultSource { qq, kugou, netease }
+export 'lyric/online_lyric_models.dart';
 
-double _computeScore(
-  Audio audio,
-  String title,
-  String artists,
-  String album, {
-  int? durationSeconds,
-}) =>
-    scoreMusicCandidate(
-      audio,
-      title: title,
-      artists: artists,
-      album: album,
-      durationSeconds: durationSeconds,
-    ).value;
-
-class SongSearchResult {
-  ResultSource source;
-  String title;
-  String artists;
-  String album;
-  double score;
-
-  /// for qq result
-  int? qqSongId;
-
-  /// for netease result
-  String? neteaseSongId;
-
-  /// for kugou result
-  String? kugouSongHash;
-
-  SongSearchResult(
-      this.source, this.title, this.artists, this.album, this.score,
-      {this.qqSongId, this.neteaseSongId, this.kugouSongHash});
-
-  @override
-  String toString() {
-    return json.encode({
-      "source": source.toString(),
-      "title": title,
-      "artists": artists,
-      "album": album,
-      "score": score,
+Future<List<SongSearchResult>> uniSearch(
+  Audio audio, {
+  Iterable<OnlineLyricProvider>? providers,
+}) async {
+  final activeProviders = providers ??
+      const <OnlineLyricProvider>[
+        _QQOnlineLyricProvider(),
+        _KuGouOnlineLyricProvider(),
+        _NeteaseOnlineLyricProvider(),
+      ];
+  final results = await Future.wait(
+    activeProviders.map((provider) => _searchProvider(provider, audio)),
+  );
+  final unique = <String, SongSearchResult>{};
+  for (final result in results.expand((rows) => rows)) {
+    final key = musicCandidateKey(
+      title: result.title,
+      artists: result.artists,
+      album: result.album,
+    );
+    final previous = unique[key];
+    if (previous == null || result.score > previous.score) unique[key] = result;
+  }
+  final merged = unique.values.toList()
+    ..sort((a, b) {
+      final scoreOrder = b.score.compareTo(a.score);
+      return scoreOrder != 0
+          ? scoreOrder
+          : a.source.name.compareTo(b.source.name);
     });
-  }
+  return merged;
+}
 
-  static SongSearchResult fromQQSearchResult(Map itemSong, Audio audio) {
-    final List singer = itemSong["singer"];
-    final buffer = StringBuffer(singer.first["name"]);
-    for (int i = 1; i < singer.length; ++i) {
-      buffer.write("、${singer[i]["name"]}");
+Future<List<SongSearchResult>> _searchProvider(
+  OnlineLyricProvider provider,
+  Audio audio,
+) async {
+  final queries = musicSearchQueriesFor(audio);
+  if (queries.isEmpty) return const [];
+  try {
+    final first = await _safeProviderSearch(provider, queries.first, audio);
+    final rows = <SongSearchResult>[...first];
+    List<SongSearchResult> titleOnly = const [];
+    if (first.length < 5 && queries.length > 1) {
+      titleOnly = await _safeProviderSearch(provider, queries[1], audio);
+      rows.addAll(titleOnly);
     }
-
-    final title = itemSong["name"] ?? "";
-    final album = itemSong["album"]["title"] ?? "";
-    final artists = buffer.toString();
-
-    return SongSearchResult(
-      ResultSource.qq,
-      title,
-      artists,
-      album,
-      _computeScore(audio, title, artists, album,
-          durationSeconds:
-              itemSong["interval"] is int ? itemSong["interval"] : null),
-      qqSongId: itemSong["id"],
-    );
-  }
-
-  static SongSearchResult fromNeteaseSearchResult(Map song, Audio audio) {
-    final title = song["name"] ?? "";
-
-    final List artistList = song["artists"];
-    final buffer = StringBuffer(artistList.first["name"]);
-    for (int i = 1; i < artistList.length; ++i) {
-      buffer.write("、${artistList[i]["name"]}");
+    if (first.isEmpty && titleOnly.isEmpty && queries.length > 2) {
+      rows.addAll(await _safeProviderSearch(provider, queries[2], audio));
     }
-    final artists = buffer.toString();
-
-    final album = song["album"]["name"] ?? "";
-
-    return SongSearchResult(
-      ResultSource.netease,
-      title,
-      artists,
-      album,
-      _computeScore(audio, title, artists, album,
-          // NetEase's `duration` field is milliseconds; scorer expects seconds.
-          durationSeconds: song["duration"] is int
-              ? ((song["duration"] as int) / 1000).round()
-              : null),
-      neteaseSongId: song["id"].toString(),
-    );
+    return _validRows(rows, provider.source, audio).take(10).toList();
+  } catch (err, trace) {
+    LOGGER.e('${provider.source.name} provider search failed: $err',
+        stackTrace: trace);
+    return const [];
   }
+}
 
-  static SongSearchResult fromKugouSearchResult(Map info, Audio audio) {
-    final title = info["songname"];
-    final album = info["album_name"];
-    final artists = info["singername"];
+Future<List<SongSearchResult>> _safeProviderSearch(
+  OnlineLyricProvider provider,
+  String query,
+  Audio audio,
+) async =>
+    (await provider.search(query, audio).timeout(const Duration(seconds: 8)));
 
-    return SongSearchResult(
-      ResultSource.kugou,
-      title,
-      artists,
-      album,
-      _computeScore(audio, title, artists, album,
-          durationSeconds: info["duration"] is int ? info["duration"] : null),
-      kugouSongHash: info["hash"],
+Iterable<SongSearchResult> _validRows(
+  Iterable<SongSearchResult> rows,
+  ResultSource source,
+  Audio audio,
+) sync* {
+  for (final row in rows) {
+    if (row.source != source ||
+        row.title.trim().isEmpty ||
+        row.artists.trim().isEmpty ||
+        row.album.trim().isEmpty) {
+      LOGGER.e('${source.name}: skipped malformed search row');
+      continue;
+    }
+    final score = scoreMusicCandidate(
+      audio,
+      title: row.title,
+      artists: row.artists,
+      album: row.album,
+      durationSeconds: row.durationSeconds,
+    );
+    yield SongSearchResult(
+      row.source,
+      row.title,
+      row.artists,
+      row.album,
+      score.value,
+      qqSongId: row.qqSongId,
+      neteaseSongId: row.neteaseSongId,
+      kugouSongHash: row.kugouSongHash,
+      durationSeconds: row.durationSeconds,
+      matchReasons: score.reasons.toList(),
     );
   }
 }
 
-Future<List<SongSearchResult>> uniSearch(Audio audio) async {
-  final queries = musicSearchQueriesFor(audio);
-  final query = queries.isEmpty ? audio.title : queries.first;
-  try {
-    List<SongSearchResult> result = [];
+class _QQOnlineLyricProvider implements OnlineLyricProvider {
+  const _QQOnlineLyricProvider();
 
-    final Map kugouAnswer = (await KuGou.searchSong(keyword: query)).data;
-    final List kugouResultList = kugouAnswer["data"]["info"];
-    for (int j = 0; j < kugouResultList.length; j++) {
-      if (j >= 5) break;
-      result.add(SongSearchResult.fromKugouSearchResult(
-        kugouResultList[j],
-        audio,
-      ));
-    }
+  @override
+  ResultSource get source => ResultSource.qq;
 
-    final Map neteaseAnswer = (await Netease.search(keyWord: query)).data;
-    final List neteaseResultList = neteaseAnswer["result"]["songs"];
-    for (int k = 0; k < neteaseResultList.length; k++) {
-      if (k >= 5) break;
-      result.add(SongSearchResult.fromNeteaseSearchResult(
-        neteaseResultList[k],
-        audio,
-      ));
-    }
-
-    final Map qqAnswer = (await QQ.search(keyWord: query)).data;
-    final List qqResultList = qqAnswer["req"]["data"]["body"]["item_song"];
-    for (int i = 0; i < qqResultList.length; i++) {
-      if (i >= 5) break;
-      result.add(SongSearchResult.fromQQSearchResult(
-        qqResultList[i],
-        audio,
-      ));
-    }
-
-    result.sort((a, b) => b.score.compareTo(a.score));
-    return result;
-  } catch (err, trace) {
-    LOGGER.e("query: $query");
-    LOGGER.e(err, stackTrace: trace);
+  @override
+  Future<List<SongSearchResult>> search(String query, Audio audio) async {
+    final answer = await QQ.search(keyWord: query, size: 10);
+    final data = _map(answer.data);
+    final rows =
+        _list(_map(_map(_map(data['req'])['data'])['body'])['item_song']);
+    return _mapRows(rows, source, audio, SongSearchResult.fromQQSearchResult);
   }
-  return Future.value([]);
+
+  @override
+  Future<OnlineLyricPayload?> fetch(SongSearchResult candidate) async {
+    final id = candidate.qqSongId;
+    if (id == null) return null;
+    final answer = await QQ.songLyric3(songId: id);
+    final data = _map(answer.data);
+    final lyric = data['lyric'];
+    if (lyric is! String || lyric.isEmpty) return null;
+    return OnlineLyricPayload(
+      OnlineLyricFormat.qrc,
+      lyric,
+      data['trans'] is String ? data['trans'] as String : null,
+    );
+  }
+}
+
+class _KuGouOnlineLyricProvider implements OnlineLyricProvider {
+  const _KuGouOnlineLyricProvider();
+
+  @override
+  ResultSource get source => ResultSource.kugou;
+
+  @override
+  Future<List<SongSearchResult>> search(String query, Audio audio) async {
+    final answer = await KuGou.searchSong(keyword: query, size: 10);
+    final data = _map(answer.data);
+    final rows = _list(_map(data['data'])['info']);
+    return _mapRows(
+        rows, source, audio, SongSearchResult.fromKugouSearchResult);
+  }
+
+  @override
+  Future<OnlineLyricPayload?> fetch(SongSearchResult candidate) async {
+    final hash = candidate.kugouSongHash;
+    if (hash == null || hash.isEmpty) return null;
+    final answer = await KuGou.krc(hash: hash);
+    final lyric = _map(answer.data)['lyric'];
+    return lyric is String && lyric.isNotEmpty
+        ? OnlineLyricPayload(OnlineLyricFormat.krc, lyric)
+        : null;
+  }
+}
+
+class _NeteaseOnlineLyricProvider implements OnlineLyricProvider {
+  const _NeteaseOnlineLyricProvider();
+
+  @override
+  ResultSource get source => ResultSource.netease;
+
+  @override
+  Future<List<SongSearchResult>> search(String query, Audio audio) async {
+    final answer = await Netease.search(keyWord: query, size: 10);
+    final data = _map(answer.data);
+    final rows = _list(_map(data['result'])['songs']);
+    return _mapRows(
+        rows, source, audio, SongSearchResult.fromNeteaseSearchResult);
+  }
+
+  @override
+  Future<OnlineLyricPayload?> fetch(SongSearchResult candidate) async {
+    final id = candidate.neteaseSongId;
+    if (id == null || id.isEmpty) return null;
+    final answer = await Netease.lyric(id: id);
+    final data = _map(answer.data);
+    final lyric = _map(data['lrc'])['lyric'];
+    if (lyric is! String || lyric.isEmpty) return null;
+    return OnlineLyricPayload(
+      OnlineLyricFormat.lrc,
+      lyric,
+      _map(data['tlyric'])['lyric'] is String
+          ? _map(data['tlyric'])['lyric'] as String
+          : null,
+    );
+  }
+}
+
+Map _map(Object? value) => value is Map ? value : const {};
+
+List _list(Object? value) => value is List ? value : const [];
+
+List<SongSearchResult> _mapRows(
+  List rows,
+  ResultSource source,
+  Audio audio,
+  SongSearchResult Function(Map, Audio) mapper,
+) {
+  final results = <SongSearchResult>[];
+  for (final row in rows.take(10)) {
+    if (row is! Map) {
+      LOGGER.e('${source.name}: skipped malformed search row');
+      continue;
+    }
+    try {
+      results.add(mapper(row, audio));
+    } catch (err, trace) {
+      LOGGER.e('${source.name}: skipped malformed search row: $err',
+          stackTrace: trace);
+    }
+  }
+  return results;
 }
 
 Future<Lrc?> _getNeteaseUnsyncLyric(String neteaseSongId) async {
