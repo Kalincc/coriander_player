@@ -529,7 +529,9 @@ fn parse_ttml_timestamp(value: &str) -> Option<f64> {
     let parts = parsed?;
     let seconds = match parts.as_slice() {
         [seconds] => *seconds,
-        [minutes, seconds] if (0.0..60.0).contains(minutes) => minutes * 60.0 + seconds,
+        [minutes, seconds]
+            if (0.0..60.0).contains(minutes)
+                && (0.0..60.0).contains(seconds) => minutes * 60.0 + seconds,
         [hours, minutes, seconds]
             if (0.0..60.0).contains(minutes) && (0.0..60.0).contains(seconds) => {
             hours * 3600.0 + minutes * 60.0 + seconds
@@ -584,7 +586,30 @@ fn has_visible_xml_text(value: &str) -> bool {
     visible
 }
 
+fn strip_xml_ignored_nodes(xml: &str) -> String {
+    let mut result = String::with_capacity(xml.len());
+    let mut remaining = xml;
+    while let Some(start) = remaining.find("<!--").or_else(|| remaining.find("<?")).or_else(|| remaining.find("<![cdata[")) {
+        result.push_str(&remaining[..start]);
+        let end_marker = if remaining[start..].starts_with("<!--") {
+            "-->"
+        } else if remaining[start..].starts_with("<?") {
+            "?>"
+        } else {
+            "]]>",
+        };
+        let Some(end) = remaining[start + end_marker.len()..].find(end_marker) else {
+            break;
+        };
+        remaining = &remaining[start + end_marker.len() + end..];
+        remaining = &remaining[end_marker.len()..];
+    }
+    result.push_str(remaining);
+    result
+}
+
 fn has_valid_ttml_paragraph(xml: &str) -> bool {
+    let xml = strip_xml_ignored_nodes(xml);
     xml.match_indices('<').any(|(start, _)| {
         let rest = &xml[start + 1..];
         if rest.starts_with('/') {
@@ -1006,6 +1031,25 @@ mod tests {
         assert_eq!(
             select_lyric_text(candidates),
             Some("<tt><body><p begin=\"57.085\" dur=\"00:00:02\">valid</p></body></tt>".to_string())
+        );
+    }
+
+    #[test]
+    fn lyric_alias_rejects_out_of_range_and_commented_ttml_timestamps() {
+        let candidates = vec![
+            ("Lyrics".to_string(), "[00:61]metadata".to_string()),
+            (
+                "LYRIC".to_string(),
+                "<tt><body><!-- <p begin=\"1\" end=\"2\">hidden</p> --></body></tt>"
+                    .to_string(),
+            ),
+            ("LYRICS".to_string(), "[60:00]metadata".to_string()),
+            ("LYRIC".to_string(), "[00:06.00]valid lyric".to_string()),
+        ];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some("[00:06.00]valid lyric".to_string())
         );
     }
 
