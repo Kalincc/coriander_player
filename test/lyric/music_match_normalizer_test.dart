@@ -102,8 +102,15 @@ void main() {
       artists: 'wang fei / 李四',
       album: 'Album',
     );
+    final unrelated = scoreMusicCandidate(
+      audio,
+      title: 'Song',
+      artists: 'unrelated / 李四',
+      album: 'Album',
+    );
 
     expect(score.value, greaterThan(.6));
+    expect(score.value, greaterThan(unrelated.value));
   });
 
   test('duration boundaries are two seconds and five seconds', () {

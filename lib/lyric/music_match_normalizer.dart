@@ -61,10 +61,21 @@ double _similarity(String expected, String actual) {
   if (a.isEmpty || b.isEmpty) return 0;
   if (a.any((x) => b.contains(x))) return 1;
   if (a.any((x) => b.any((y) => x.contains(y) || y.contains(x)))) return .7;
-  final at = _basic(expected).split(' ').where((x) => x.isNotEmpty).toSet();
-  final bt = _basic(actual).split(' ').where((x) => x.isNotEmpty).toSet();
-  if (at.isEmpty || bt.isEmpty) return 0;
-  return at.intersection(bt).length / at.union(bt).length;
+  var strongestOverlap = 0.0;
+  for (final expectedForm in a) {
+    final expectedTokens =
+        expectedForm.split(' ').where((x) => x.isNotEmpty).toSet();
+    if (expectedTokens.isEmpty) continue;
+    for (final actualForm in b) {
+      final actualTokens =
+          actualForm.split(' ').where((x) => x.isNotEmpty).toSet();
+      if (actualTokens.isEmpty) continue;
+      final overlap = expectedTokens.intersection(actualTokens).length /
+          expectedTokens.union(actualTokens).length;
+      if (overlap > strongestOverlap) strongestOverlap = overlap;
+    }
+  }
+  return strongestOverlap;
 }
 
 String _queryTitle(String title) => _titleCore(title);
