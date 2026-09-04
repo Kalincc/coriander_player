@@ -54,3 +54,11 @@ Review-fix TDD evidence:
 - Green: `flutter test test/lyric/music_match_normalizer_test.dart` passed all 6 tests after the fixes.
 - Fix commit: `d8b7c76d3f55f63f214fc058aac753e9d9580fb4` — `fix: preserve music version matching distinctions`.
 - Final focused verification: 14 tests passed across the existing lyric normalizer, new music normalizer, and matcher tests; `flutter analyze lib/lyric/music_match_normalizer.dart lib/music_matcher.dart` reported `No issues found!`.
+
+## Review follow-up round 2
+
+Added a strict artist-only comparison against an unrelated artist, so the pinyin partial-match assertion cannot pass from title or album points. Token overlap now evaluates every normalized, simplified, spaced-pinyin, and compact-pinyin form pair and chooses the strongest Jaccard overlap deterministically.
+
+Red evidence: the strengthened artist test failed before the change because the pinyin candidate and unrelated candidate scored equally (`0.7`). Green evidence: `flutter test test/lyric/music_match_normalizer_test.dart test/music_matcher_test.dart` passed all 7 tests, and analyzer reported `No issues found!`.
+
+Fix commit: `c394929071f9929635887983cf5f07126c8c5b11` — `fix: score pinyin partial artist matches`.
