@@ -519,6 +519,71 @@ pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Ve
     pic_option
 }
 
+fn parse_ttml_timestamp(value: &str) -> Option<f64> {
+    let value = value.trim().trim_end_matches('s');
+    let parts: Vec<_> = value.split(':').collect();
+    let parsed: Option<Vec<f64>> = parts
+        .iter()
+        .map(|part| part.parse::<f64>().ok())
+        .collect();
+    let parts = parsed?;
+    let seconds = match parts.as_slice() {
+        [seconds] => *seconds,
+        [minutes, seconds] if (0.0..60.0).contains(minutes) => minutes * 60.0 + seconds,
+        [hours, minutes, seconds]
+            if (0.0..60.0).contains(minutes) && (0.0..60.0).contains(seconds) => {
+            hours * 3600.0 + minutes * 60.0 + seconds
+        }
+        _ => return None,
+    };
+    (seconds.is_finite() && seconds >= 0.0).then_some(seconds)
+}
+
+fn ttml_attribute<'a>(opening: &'a str, name: &str) -> Option<&'a str> {
+    let mut remaining = opening;
+    while let Some(start) = remaining.find(name) {
+        let after_name = &remaining[start + name.len()..];
+        let after_equals = after_name.trim_start().strip_prefix('=')?.trim_start();
+        let quote = after_equals.chars().next()?;
+        if quote != '\'' && quote != '"' {
+            remaining = &after_name[1..];
+            continue;
+        }
+        let value = &after_equals[quote.len_utf8()..];
+        return value.find(quote).map(|end| &value[..end]);
+    }
+    None
+}
+
+fn has_visible_xml_text(value: &str) -> bool {
+    let mut visible = false;
+    let mut in_tag = false;
+    let mut in_comment = false;
+    let mut chars = value.chars().peekable();
+    while let Some(character) = chars.next() {
+        if in_comment {
+            if character == '-' && chars.peek() == Some(&'-') {
+                chars.next();
+                if chars.next() == Some('>') {
+                    in_comment = false;
+                }
+            }
+        } else if character == '<' && chars.peek() == Some(&'!') {
+            chars.next();
+            if chars.next() == Some('-') && chars.next() == Some('-') {
+                in_comment = true;
+            }
+        } else if character == '<' {
+            in_tag = true;
+        } else if character == '>' && in_tag {
+            in_tag = false;
+        } else if !in_tag && !character.is_whitespace() {
+            visible = true;
+        }
+    }
+    visible
+}
+
 fn has_valid_ttml_paragraph(xml: &str) -> bool {
     xml.match_indices('<').any(|(start, _)| {
         let rest = &xml[start + 1..];
@@ -537,17 +602,11 @@ fn has_valid_ttml_paragraph(xml: &str) -> bool {
         if name != "p" && !name.ends_with(":p") {
             return false;
         }
-        let attribute = |key: &str| {
-            opening
-                .split_whitespace()
-                .find_map(|part| part.strip_prefix(&format!("{}=\"", key)))
-                .and_then(|value| value.split('"').next())
-        };
-        let Some(begin) = attribute("begin").and_then(|value| value.trim_end_matches('s').parse::<f64>().ok()) else {
+        let Some(begin) = ttml_attribute(opening, "begin").and_then(parse_ttml_timestamp) else {
             return false;
         };
-        let end_time = attribute("end").and_then(|value| value.trim_end_matches('s').parse::<f64>().ok());
-        let duration = attribute("dur").and_then(|value| value.trim_end_matches('s').parse::<f64>().ok());
+        let end_time = ttml_attribute(opening, "end").and_then(parse_ttml_timestamp);
+        let duration = ttml_attribute(opening, "dur").and_then(parse_ttml_timestamp);
         let timing_valid = end_time.map_or(false, |value| value.is_finite() && value > begin)
             || duration.map_or(false, |value| value.is_finite() && value > 0.0);
         let closing = format!("</{}>", name);
@@ -555,7 +614,7 @@ fn has_valid_ttml_paragraph(xml: &str) -> bool {
             return false;
         };
         let visible_text = &xml[start + end + 2..start + end + 2 + close];
-        timing_valid && visible_text.split('<').any(|part| !part.trim().is_empty())
+        timing_valid && has_visible_xml_text(visible_text)
     })
 }
 
@@ -926,6 +985,27 @@ mod tests {
         assert_eq!(
             select_lyric_text(candidates),
             Some("[00:05.00]valid lyric".to_string())
+        );
+    }
+
+    #[test]
+    fn lyric_alias_accepts_dart_timestamp_forms_and_single_quoted_attributes() {
+        let candidates = vec![
+            (
+                "Lyrics".to_string(),
+                "<tt><body><p begin = '00:01' end = '00:02'><span></span></p></body></tt>"
+                    .to_string(),
+            ),
+            (
+                "LYRIC".to_string(),
+                "<tt><body><p begin=\"57.085\" dur=\"00:00:02\">valid</p></body></tt>"
+                    .to_string(),
+            ),
+        ];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some("<tt><body><p begin=\"57.085\" dur=\"00:00:02\">valid</p></body></tt>".to_string())
         );
     }
 

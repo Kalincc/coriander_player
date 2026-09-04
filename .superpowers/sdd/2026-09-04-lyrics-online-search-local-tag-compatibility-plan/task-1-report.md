@@ -48,3 +48,10 @@
 - Added regressions for whitespace-only TTML, div-only body, and paragraphs missing `end`/`dur`; corrected the positive namespaced fixture with a valid end time.
 - TTML preselection now requires a namespace-independent non-empty `<p>` with numeric `begin`, a valid positive `end` or `dur`, a matching closing tag, and visible text. Invalid candidates continue to later aliases/fallback.
 - Verification: `flutter test test/library/lyric_search_index_test.dart` passed (`00:00 +22: All tests passed!`). Cargo is unavailable (`cargo: The term 'cargo' is not recognized...`), so Rust tests/compile remain unverified.
+
+## Fourth reviewer addendum
+
+- Added TDD regression coverage for Dart-compatible decimal, `mm:ss`, and `HH:mm:ss` timing forms, quoted attributes with spacing, and empty `<span>` text falling through.
+- Added timestamp parsing with non-negative finite values and proper 1/2/3-part range validation; attribute extraction accepts single/double quotes and whitespace around `=`.
+- Visible-text validation now ignores XML tags and comments, requiring actual text outside tags in a timed `<p>` with valid `begin` plus positive `end` or `dur`.
+- Verification: `flutter test test/library/lyric_search_index_test.dart` passed (`00:00 +22: All tests passed!`). Cargo remains unavailable, so Rust tests/compile are unverified.
