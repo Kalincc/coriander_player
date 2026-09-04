@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:coriander_player/library/audio_library.dart';
@@ -234,6 +235,190 @@ void main() {
     );
 
     expect(lyric, isNull);
+  });
+
+  test('automatic selection reuses a matching cached lyric while offline',
+      () async {
+    final cache = memoryCache();
+    final audio = makeAudio('offline.flac', 2);
+    await getOnlineLyric(
+      audio: audio,
+      candidate: candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1),
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (_, __) async => const [],
+          fetch: (_) async => const OnlineLyricPayload(
+              OnlineLyricFormat.lrc, '[00:01.00]cached'),
+        ),
+      ],
+      cache: cache,
+    );
+
+    final lyric = await getMostMatchedLyric(
+      audio,
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (_, __) => throw StateError('offline'),
+        ),
+      ],
+      cache: cache,
+    );
+
+    expect(lyric, isNotNull);
+    expect((lyric!.lines.single as dynamic).content, 'cached');
+  });
+
+  test('an unresponsive lyric body advances to the next candidate', () async {
+    final fetched = <int?>[];
+    final lyric = await getMostMatchedLyric(
+      makeAudio('slow.flac', 3),
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (_, __) async => [
+            candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1),
+            candidate(ResultSource.qq, '红豆 (Live)', '王菲', '唱游', id: 2),
+          ],
+          fetch: (result) {
+            fetched.add(result.qqSongId);
+            if (result.qqSongId == 1) {
+              return Completer<OnlineLyricPayload?>().future;
+            }
+            return Future.value(const OnlineLyricPayload(
+              OnlineLyricFormat.lrc,
+              '[00:01.00]fallback',
+            ));
+          },
+        ),
+      ],
+      cache: memoryCache(),
+    );
+
+    expect(lyric, isNotNull);
+    expect(fetched, [1, 2]);
+  });
+
+  test('a failed optional query keeps primary results', () async {
+    var searches = 0;
+
+    final results = await uniSearch(makeAudio('primary.flac', 4), providers: [
+      FakeProvider(
+        ResultSource.qq,
+        search: (_, __) async {
+          if (++searches == 1) {
+            return [candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1)];
+          }
+          throw StateError('title-only unavailable');
+        },
+      ),
+    ]);
+
+    expect(results.map((result) => result.qqSongId), [1]);
+  });
+
+  test('provider candidate cap keeps later higher-scored fallback rows',
+      () async {
+    var searches = 0;
+
+    final results = await uniSearch(makeAudio('ranked.flac', 5), providers: [
+      FakeProvider(
+        ResultSource.qq,
+        search: (_, __) async {
+          if (++searches == 1) {
+            return List.generate(
+              4,
+              (index) => candidate(
+                ResultSource.qq,
+                'wrong first $index',
+                '王菲',
+                '唱游',
+                id: index,
+              ),
+            );
+          }
+          return [
+            for (var index = 0; index < 9; index++)
+              candidate(
+                ResultSource.qq,
+                'wrong second $index',
+                '王菲',
+                '唱游',
+                id: 10 + index,
+              ),
+            candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 99),
+          ];
+        },
+      ),
+    ]);
+
+    expect(results.first.qqSongId, 99);
+    expect(results, hasLength(10));
+  });
+
+  test('provider timeout does not start fallback queries after the deadline',
+      () async {
+    final first = Completer<List<SongSearchResult>>();
+    final queries = <String>[];
+
+    final results = await uniSearch(
+      makeAudio('deadline.flac', 6),
+      providerTimeout: const Duration(milliseconds: 10),
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (query, _) {
+            queries.add(query);
+            return first.future;
+          },
+        ),
+      ],
+    );
+    first.complete(const []);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(results, isEmpty);
+    expect(queries, ['红豆 王菲']);
+  });
+
+  test('an unparseable cached payload falls back to its provider', () async {
+    final cache = memoryCache();
+    final audio = makeAudio('invalid-cache.flac', 7);
+    await cache.writeEntry(OnlineLyricCacheEntry(
+      key: 'qq:1',
+      audioFingerprint: audioLyricFingerprint(audio),
+      payload:
+          const OnlineLyricPayload(OnlineLyricFormat.lrc, 'not timestamped'),
+      title: audio.title,
+      artists: audio.artist,
+      album: audio.album,
+      score: 1,
+      fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
+    ));
+    var fetches = 0;
+
+    final lyric = await getOnlineLyric(
+      audio: audio,
+      candidate: candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1),
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (_, __) async => const [],
+          fetch: (_) async {
+            fetches++;
+            return const OnlineLyricPayload(
+              OnlineLyricFormat.lrc,
+              '[00:01.00]valid',
+            );
+          },
+        ),
+      ],
+      cache: cache,
+    );
+
+    expect(fetches, 1);
+    expect(lyric, isNotNull);
   });
 }
 

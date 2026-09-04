@@ -130,6 +130,23 @@ class OnlineLyricCache {
     return entry;
   }
 
+  Future<List<OnlineLyricCacheEntry>> readEntriesForAudioFingerprint(
+    String audioFingerprint,
+  ) async {
+    await _load();
+    final entries = _entries.values
+        .where((entry) =>
+            !_isExpired(entry) && entry.audioFingerprint == audioFingerprint)
+        .toList()
+      ..sort((a, b) {
+        final scoreOrder = b.score.compareTo(a.score);
+        if (scoreOrder != 0) return scoreOrder;
+        final fetchedOrder = b.fetchedAtMs.compareTo(a.fetchedAtMs);
+        return fetchedOrder != 0 ? fetchedOrder : a.key.compareTo(b.key);
+      });
+    return entries;
+  }
+
   Future<void> writeEntry(OnlineLyricCacheEntry entry) {
     final result = _writeTail.then((_) => _writeEntry(entry));
     _writeTail = result.catchError((_) {});

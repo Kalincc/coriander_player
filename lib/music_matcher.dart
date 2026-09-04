@@ -45,43 +45,90 @@ Future<List<SongSearchResult>> _searchProvider(
   OnlineLyricProvider provider,
   Audio audio,
   Duration providerTimeout,
-) =>
-    _searchProviderWithinBudget(provider, audio).timeout(
-      providerTimeout,
-      onTimeout: () {
-        LOGGER.e('${provider.source.name} provider search timed out');
-        return const [];
-      },
-    );
-
-Future<List<SongSearchResult>> _searchProviderWithinBudget(
-  OnlineLyricProvider provider,
-  Audio audio,
 ) async {
   final queries = musicSearchQueriesFor(audio);
   if (queries.isEmpty) return const [];
-  try {
-    final first = await provider.search(queries.first, audio);
-    final rows = <SongSearchResult>[...first];
-    List<SongSearchResult> titleOnly = const [];
-    final hasTitleOnlyQuery =
-        audio.artist.trim().isNotEmpty && queries.length > 1;
-    if (first.length < 5 && hasTitleOnlyQuery) {
-      titleOnly = await provider.search(queries[1], audio);
-      rows.addAll(titleOnly);
+  final stopwatch = Stopwatch()..start();
+
+  Future<List<SongSearchResult>?> searchBeforeDeadline(String query) async {
+    final remaining = providerTimeout - stopwatch.elapsed;
+    if (remaining <= Duration.zero) {
+      LOGGER.e('${provider.source.name} provider search timed out');
+      return null;
     }
-    final albumQueryIndex = hasTitleOnlyQuery ? 2 : 1;
-    if (first.isEmpty &&
-        titleOnly.isEmpty &&
-        queries.length > albumQueryIndex) {
-      rows.addAll(await provider.search(queries[albumQueryIndex], audio));
+    try {
+      return await provider.search(query, audio).timeout(
+        remaining,
+        onTimeout: () {
+          LOGGER.e('${provider.source.name} provider search timed out');
+          return const [];
+        },
+      );
+    } catch (err, trace) {
+      LOGGER.e('${provider.source.name} provider search failed: $err',
+          stackTrace: trace);
+      return null;
     }
-    return _validRows(rows, provider.source, audio).take(10).toList();
-  } catch (err, trace) {
-    LOGGER.e('${provider.source.name} provider search failed: $err',
-        stackTrace: trace);
-    return const [];
   }
+
+  final first = await searchBeforeDeadline(queries.first);
+  if (first == null) return const [];
+  final rows = <SongSearchResult>[...first];
+  List<SongSearchResult> titleOnly = const [];
+  final hasTitleOnlyQuery =
+      audio.artist.trim().isNotEmpty && queries.length > 1;
+  if (first.length < 5 && hasTitleOnlyQuery) {
+    final response = await searchBeforeDeadline(queries[1]);
+    if (response == null) {
+      return _rankProviderRows(rows, provider.source, audio);
+    }
+    titleOnly = response;
+    rows.addAll(titleOnly);
+  }
+  final albumQueryIndex = hasTitleOnlyQuery ? 2 : 1;
+  if (first.isEmpty && titleOnly.isEmpty && queries.length > albumQueryIndex) {
+    final response = await searchBeforeDeadline(queries[albumQueryIndex]);
+    if (response == null) {
+      return _rankProviderRows(rows, provider.source, audio);
+    }
+    rows.addAll(response);
+  }
+  return _rankProviderRows(rows, provider.source, audio);
+}
+
+List<SongSearchResult> _rankProviderRows(
+  Iterable<SongSearchResult> rows,
+  ResultSource source,
+  Audio audio,
+) {
+  final unique = <String, SongSearchResult>{};
+  for (final result in _validRows(rows, source, audio)) {
+    final key = musicCandidateKey(
+      title: result.title,
+      artists: result.artists,
+      album: result.album,
+    );
+    final previous = unique[key];
+    if (previous == null || _compareCandidates(result, previous) < 0) {
+      unique[key] = result;
+    }
+  }
+  final ranked = unique.values.toList()..sort(_compareCandidates);
+  return ranked.take(10).toList();
+}
+
+int _compareCandidates(SongSearchResult a, SongSearchResult b) {
+  final scoreOrder = b.score.compareTo(a.score);
+  if (scoreOrder != 0) return scoreOrder;
+  final sourceOrder = a.source.name.compareTo(b.source.name);
+  if (sourceOrder != 0) return sourceOrder;
+  final titleOrder = a.title.compareTo(b.title);
+  if (titleOrder != 0) return titleOrder;
+  final artistOrder = a.artists.compareTo(b.artists);
+  if (artistOrder != 0) return artistOrder;
+  final albumOrder = a.album.compareTo(b.album);
+  if (albumOrder != 0) return albumOrder;
+  return (_providerIdFor(a) ?? '').compareTo(_providerIdFor(b) ?? '');
 }
 
 Iterable<SongSearchResult> _validRows(
@@ -221,7 +268,7 @@ List<SongSearchResult> _mapRows(
   SongSearchResult Function(Map, Audio) mapper,
 ) {
   final results = <SongSearchResult>[];
-  for (final row in rows.take(10)) {
+  for (final row in rows) {
     if (row is! Map) {
       LOGGER.e('${source.name}: skipped malformed search row');
       continue;
@@ -290,11 +337,21 @@ Future<Lyric?> getOnlineLyric({
   final key = '${request.source.name}:$providerId';
   final cached =
       await activeCache.readEntry(key, audioFingerprint: fingerprint);
-  if (cached != null) return parseOnlineLyricPayload(cached.payload);
+  if (cached != null) {
+    final lyric = parseOnlineLyricPayload(cached.payload);
+    if (lyric != null) return lyric;
+    LOGGER.e('Ignoring invalid cached ${request.source.name} lyric');
+  }
 
   OnlineLyricPayload? payload;
   try {
-    payload = await provider.fetch(request);
+    payload = await provider.fetch(request).timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        LOGGER.e('${request.source.name} lyric fetch timed out');
+        return null;
+      },
+    );
   } catch (error, trace) {
     LOGGER.e('Could not fetch ${request.source.name} lyric: $error',
         stackTrace: trace);
@@ -326,15 +383,29 @@ Future<Lyric?> getMostMatchedLyric(
   Iterable<OnlineLyricProvider>? providers,
   OnlineLyricCache? cache,
 }) async {
-  final candidates = await uniSearch(audio, providers: providers);
+  final activeProviders =
+      (providers ?? _defaultOnlineLyricProviders).toList(growable: false);
+  final activeCache = cache ?? OnlineLyricCache.defaults();
+  final fingerprint = audioLyricFingerprint(audio);
+  try {
+    for (final entry
+        in await activeCache.readEntriesForAudioFingerprint(fingerprint)) {
+      final lyric = parseOnlineLyricPayload(entry.payload);
+      if (lyric != null && lyric.lines.isNotEmpty) return lyric;
+    }
+  } catch (error, trace) {
+    LOGGER.e('Could not read cached online lyrics: $error', stackTrace: trace);
+  }
+
+  final candidates = await uniSearch(audio, providers: activeProviders);
   for (final candidate in candidates.take(8)) {
     if (candidate.score < .62) break;
     try {
       final lyric = await getOnlineLyric(
         audio: audio,
         candidate: candidate,
-        providers: providers,
-        cache: cache,
+        providers: activeProviders,
+        cache: activeCache,
       );
       if (lyric != null && lyric.lines.isNotEmpty) return lyric;
     } catch (error, trace) {
