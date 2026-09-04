@@ -520,21 +520,34 @@ pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Ve
 }
 
 fn parse_ttml_timestamp(value: &str) -> Option<f64> {
-    let value = value.trim().trim_end_matches('s');
+    let value = value.trim();
     let parts: Vec<_> = value.split(':').collect();
-    let parsed: Option<Vec<f64>> = parts
-        .iter()
-        .map(|part| part.parse::<f64>().ok())
-        .collect();
-    let parts = parsed?;
     let seconds = match parts.as_slice() {
-        [seconds] => *seconds,
-        [minutes, seconds]
-            if (0.0..60.0).contains(minutes)
-                && (0.0..60.0).contains(seconds) => minutes * 60.0 + seconds,
-        [hours, minutes, seconds]
-            if (0.0..60.0).contains(minutes) && (0.0..60.0).contains(seconds) => {
-            hours * 3600.0 + minutes * 60.0 + seconds
+        [seconds] => {
+            let seconds = seconds.parse::<f64>().ok()?;
+            if !seconds.is_finite() || seconds < 0.0 {
+                return None;
+            }
+            seconds
+        }
+        [minutes, seconds] => {
+            // Match Ttml._parseTimestamp: minutes are an integer and may be
+            // larger than 59; only the seconds component is bounded.
+            let minutes = minutes.parse::<u64>().ok()? as f64;
+            let seconds = seconds.parse::<f64>().ok()?;
+            if !seconds.is_finite() || !(0.0..60.0).contains(&seconds) {
+                return None;
+            }
+            minutes * 60.0 + seconds
+        }
+        [hours, minutes, seconds] => {
+            let hours = hours.parse::<u64>().ok()? as f64;
+            let minutes = minutes.parse::<u64>().ok()?;
+            let seconds = seconds.parse::<f64>().ok()?;
+            if minutes >= 60 || !seconds.is_finite() || !(0.0..60.0).contains(&seconds) {
+                return None;
+            }
+            hours * 3600.0 + minutes as f64 * 60.0 + seconds
         }
         _ => return None,
     };
@@ -542,17 +555,47 @@ fn parse_ttml_timestamp(value: &str) -> Option<f64> {
 }
 
 fn ttml_attribute<'a>(opening: &'a str, name: &str) -> Option<&'a str> {
-    let mut remaining = opening;
-    while let Some(start) = remaining.find(name) {
-        let after_name = &remaining[start + name.len()..];
-        let after_equals = after_name.trim_start().strip_prefix('=')?.trim_start();
-        let quote = after_equals.chars().next()?;
-        if quote != '\'' && quote != '"' {
-            remaining = &after_name[1..];
+    let mut offset = 0;
+    while let Some(relative_start) = opening[offset..].find(name) {
+        let start = offset + relative_start;
+        let end = start + name.len();
+        let is_name_boundary = opening[..start].chars().last().map_or(true, |character| {
+            !(character.is_ascii_alphanumeric() || matches!(character, '_' | ':' | '-'))
+        });
+        if !is_name_boundary {
+            offset = end;
             continue;
         }
-        let value = &after_equals[quote.len_utf8()..];
-        return value.find(quote).map(|end| &value[..end]);
+
+        let mut cursor = end;
+        while let Some(character) = opening[cursor..].chars().next() {
+            if !character.is_whitespace() {
+                break;
+            }
+            cursor += character.len_utf8();
+        }
+        if opening.as_bytes().get(cursor) != Some(&b'=') {
+            offset = end;
+            continue;
+        }
+        cursor += 1;
+        while let Some(character) = opening[cursor..].chars().next() {
+            if !character.is_whitespace() {
+                break;
+            }
+            cursor += character.len_utf8();
+        }
+        let Some(quote) = opening[cursor..].chars().next() else {
+            return None;
+        };
+        if quote != '\'' && quote != '"' {
+            offset = end;
+            continue;
+        }
+        let value_start = cursor + quote.len_utf8();
+        return opening[value_start..]
+            .find(quote)
+            .map(|relative_end| &opening[value_start..value_start + relative_end]);
     }
     None
 }
@@ -589,20 +632,40 @@ fn has_visible_xml_text(value: &str) -> bool {
 fn strip_xml_ignored_nodes(xml: &str) -> String {
     let mut result = String::with_capacity(xml.len());
     let mut remaining = xml;
-    while let Some(start) = remaining.find("<!--").or_else(|| remaining.find("<?")).or_else(|| remaining.find("<![cdata[")) {
-        result.push_str(&remaining[..start]);
-        let end_marker = if remaining[start..].starts_with("<!--") {
-            "-->"
-        } else if remaining[start..].starts_with("<?") {
-            "?>"
-        } else {
-            "]]>",
-        };
-        let Some(end) = remaining[start + end_marker.len()..].find(end_marker) else {
+    loop {
+        let mut next: Option<(usize, &str, &str)> = None;
+        for (start_marker, end_marker) in [
+            ("<!--", "-->"),
+            ("<?", "?>"),
+            ("<![cdata[", "]]>")
+        ] {
+            if let Some(start) = remaining.find(start_marker) {
+                if next.map_or(true, |(old_start, _, _)| start < old_start) {
+                    next = Some((start, start_marker, end_marker));
+                }
+            }
+        }
+        let Some((start, start_marker, end_marker)) = next else {
             break;
         };
-        remaining = &remaining[start + end_marker.len() + end..];
-        remaining = &remaining[end_marker.len()..];
+        result.push_str(&remaining[..start]);
+        let content_start = start + start_marker.len();
+        let Some(end) = remaining[content_start..].find(end_marker) else {
+            // Ignore an unterminated comment/PI/CDATA rather than scanning
+            // markup inside it as a real element.
+            remaining = "";
+            break;
+        };
+        let content = &remaining[content_start..content_start + end];
+        if start_marker == "<![cdata[" {
+            // CDATA is text to the Dart XML parser. Avoid treating literal
+            // '<p>' inside that text as a real paragraph while retaining its
+            // non-markup characters for visible-text detection.
+            result.extend(content.chars().map(|character| {
+                if character == '<' { ' ' } else { character }
+            }));
+        }
+        remaining = &remaining[content_start + end + end_marker.len()..];
     }
     result.push_str(remaining);
     result
@@ -630,10 +693,15 @@ fn has_valid_ttml_paragraph(xml: &str) -> bool {
         let Some(begin) = ttml_attribute(opening, "begin").and_then(parse_ttml_timestamp) else {
             return false;
         };
-        let end_time = ttml_attribute(opening, "end").and_then(parse_ttml_timestamp);
-        let duration = ttml_attribute(opening, "dur").and_then(parse_ttml_timestamp);
-        let timing_valid = end_time.map_or(false, |value| value.is_finite() && value > begin)
-            || duration.map_or(false, |value| value.is_finite() && value > 0.0);
+        let timing_valid = if let Some(end_value) = ttml_attribute(opening, "end") {
+            // Dart's _resolveEnd gives an explicit end precedence over dur;
+            // an invalid or reversed end must not be replaced by dur.
+            parse_ttml_timestamp(end_value).map_or(false, |value| value > begin)
+        } else {
+            ttml_attribute(opening, "dur")
+                .and_then(parse_ttml_timestamp)
+                .map_or(false, |value| value > 0.0)
+        };
         let closing = format!("</{}>", name);
         let Some(close) = xml[start + end + 2..].find(&closing) else {
             return false;
@@ -1023,15 +1091,22 @@ mod tests {
             ),
             (
                 "LYRIC".to_string(),
-                "<tt><body><p begin=\"57.085\" dur=\"00:00:02\">valid</p></body></tt>"
+                "<tt><body><p begin=\"57.085\" end=\"1:03.351\">valid</p></body></tt>"
                     .to_string(),
             ),
         ];
 
         assert_eq!(
             select_lyric_text(candidates),
-            Some("<tt><body><p begin=\"57.085\" dur=\"00:00:02\">valid</p></body></tt>".to_string())
+            Some("<tt><body><p begin=\"57.085\" end=\"1:03.351\">valid</p></body></tt>".to_string())
         );
+    }
+
+    #[test]
+    fn lyric_alias_accepts_single_quoted_ttml_attributes() {
+        let lyric = "<tt><body><p begin = '00:01' end = '00:02'>valid</p></body></tt>";
+
+        assert_eq!(select_lyric_text(vec![("LYRIC".to_string(), lyric.to_string())]), Some(lyric.to_string()));
     }
 
     #[test]
@@ -1043,13 +1118,42 @@ mod tests {
                 "<tt><body><!-- <p begin=\"1\" end=\"2\">hidden</p> --></body></tt>"
                     .to_string(),
             ),
-            ("LYRICS".to_string(), "[60:00]metadata".to_string()),
+            ("LYRICS".to_string(), "[00:61]metadata".to_string()),
             ("LYRIC".to_string(), "[00:06.00]valid lyric".to_string()),
         ];
 
         assert_eq!(
             select_lyric_text(candidates),
             Some("[00:06.00]valid lyric".to_string())
+        );
+    }
+
+    #[test]
+    fn lyric_alias_matches_dart_ttml_time_rules_and_end_precedence() {
+        let candidates = vec![
+            (
+                "Lyrics".to_string(),
+                "<tt><body><p begin=\"00:61\" end=\"00:62\">bad</p></body></tt>"
+                    .to_string(),
+            ),
+            (
+                "LYRIC".to_string(),
+                "<tt><body><p begin=\"2\" end=\"1\" dur=\"3\">bad</p></body></tt>"
+                    .to_string(),
+            ),
+            (
+                "LYRICS".to_string(),
+                "<tt><body><p begin=\"60:00\" end=\"60:01\">valid</p></body></tt>"
+                    .to_string(),
+            ),
+        ];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some(
+                "<tt><body><p begin=\"60:00\" end=\"60:01\">valid</p></body></tt>"
+                    .to_string()
+            )
         );
     }
 
