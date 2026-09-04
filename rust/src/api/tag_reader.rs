@@ -604,27 +604,51 @@ fn has_visible_xml_text(value: &str) -> bool {
     let mut visible = false;
     let mut in_tag = false;
     let mut in_comment = false;
-    let mut chars = value.chars().peekable();
-    while let Some(character) = chars.next() {
+    let mut index = 0;
+    while index < value.len() {
+        let character = value[index..].chars().next().unwrap();
         if in_comment {
-            if character == '-' && chars.peek() == Some(&'-') {
-                chars.next();
-                if chars.next() == Some('>') {
+            if value[index..].starts_with("-->") {
+                index += 3;
+                if in_comment {
                     in_comment = false;
                 }
+                continue;
             }
-        } else if character == '<' && chars.peek() == Some(&'!') {
-            chars.next();
-            if chars.next() == Some('-') && chars.next() == Some('-') {
-                in_comment = true;
-            }
+        } else if character == '<' && value[index..].starts_with("<!--") {
+            in_comment = true;
+            index += 4;
+            continue;
         } else if character == '<' {
             in_tag = true;
         } else if character == '>' && in_tag {
             in_tag = false;
-        } else if !in_tag && !character.is_whitespace() {
-            visible = true;
+        } else if !in_tag {
+            if character == '&' {
+                if let Some(relative_end) = value[index..].find(';') {
+                    let entity = &value[index + 1..index + relative_end];
+                    let code_point = entity
+                        .strip_prefix("#x")
+                        .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+                        .or_else(|| {
+                            entity
+                                .strip_prefix('#')
+                                .and_then(|decimal| decimal.parse::<u32>().ok())
+                        });
+                    if let Some(code_point) = code_point.and_then(char::from_u32) {
+                        if !code_point.is_whitespace() {
+                            visible = true;
+                        }
+                        index += relative_end + 1;
+                        continue;
+                    }
+                }
+            }
+            if !character.is_whitespace() {
+                visible = true;
+            }
         }
+        index += character.len_utf8();
     }
     visible
 }
@@ -637,7 +661,7 @@ fn strip_xml_ignored_nodes(xml: &str) -> String {
         for (start_marker, end_marker) in [
             ("<!--", "-->"),
             ("<?", "?>"),
-            ("<![cdata[", "]]>")
+            ("<![cdata[", "]]>"),
         ] {
             if let Some(start) = remaining.find(start_marker) {
                 if next.map_or(true, |(old_start, _, _)| start < old_start) {
@@ -656,23 +680,57 @@ fn strip_xml_ignored_nodes(xml: &str) -> String {
             remaining = "";
             break;
         };
-        let content = &remaining[content_start..content_start + end];
-        if start_marker == "<![cdata[" {
-            // CDATA is text to the Dart XML parser. Avoid treating literal
-            // '<p>' inside that text as a real paragraph while retaining its
-            // non-markup characters for visible-text detection.
-            result.extend(content.chars().map(|character| {
-                if character == '<' { ' ' } else { character }
-            }));
-        }
+        // The Dart parser's `_visibleText` collects XmlText but deliberately
+        // ignores CDATA nodes. Keep comments/PIs/CDATA out of the preflight so
+        // they cannot create pseudo-elements or visible lyric text.
         remaining = &remaining[content_start + end + end_marker.len()..];
     }
     result.push_str(remaining);
     result
 }
 
+fn has_balanced_xml_elements(xml: &str) -> bool {
+    let mut stack = Vec::<String>::new();
+    let mut offset = 0;
+    while let Some(relative_start) = xml[offset..].find('<') {
+        let start = offset + relative_start;
+        let rest = &xml[start + 1..];
+        let Some(end) = rest.find('>') else {
+            return false;
+        };
+        let token = rest[..end].trim();
+        if token.is_empty() {
+            return false;
+        }
+        if let Some(closing) = token.strip_prefix('/') {
+            let name = closing.split_whitespace().next().unwrap_or("");
+            if name.is_empty() || stack.pop().as_deref() != Some(name) {
+                return false;
+            }
+        } else if !token.starts_with('!') {
+            let self_closing = token.ends_with('/');
+            let name = token
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim_end_matches('/');
+            if name.is_empty() {
+                return false;
+            }
+            if !self_closing {
+                stack.push(name.to_string());
+            }
+        }
+        offset = start + end + 2;
+    }
+    stack.is_empty()
+}
+
 fn has_valid_ttml_paragraph(xml: &str) -> bool {
     let xml = strip_xml_ignored_nodes(xml);
+    if !has_balanced_xml_elements(&xml) {
+        return false;
+    }
     xml.match_indices('<').any(|(start, _)| {
         let rest = &xml[start + 1..];
         if rest.starts_with('/') {
@@ -694,9 +752,16 @@ fn has_valid_ttml_paragraph(xml: &str) -> bool {
             return false;
         };
         let timing_valid = if let Some(end_value) = ttml_attribute(opening, "end") {
-            // Dart's _resolveEnd gives an explicit end precedence over dur;
-            // an invalid or reversed end must not be replaced by dur.
-            parse_ttml_timestamp(end_value).map_or(false, |value| value > begin)
+            // Dart's _resolveEnd prefers a parseable explicit end. If that
+            // value is malformed, it falls back to dur; a parseable but
+            // reversed end remains authoritative and therefore invalid.
+            if let Some(end) = parse_ttml_timestamp(end_value) {
+                end > begin
+            } else {
+                ttml_attribute(opening, "dur")
+                    .and_then(parse_ttml_timestamp)
+                    .map_or(false, |value| value > 0.0)
+            }
         } else {
             ttml_attribute(opening, "dur")
                 .and_then(parse_ttml_timestamp)
@@ -729,7 +794,8 @@ fn select_lyric_text(
             ttml_source = ttml_source[end + 2..].trim_start();
         }
         let lowered = ttml_source.to_lowercase();
-        let root_name = lowered
+        let structural = strip_xml_ignored_nodes(&lowered);
+        let root_name = structural
             .strip_prefix('<')
             .and_then(|source| source.split(|character: char| character.is_whitespace() || character == '>').next())
             .unwrap_or("");
@@ -737,19 +803,19 @@ fn select_lyric_text(
             || root_name
                 .rsplit_once(':')
                 .map_or(false, |(_, local_name)| local_name == "tt");
-        let body_name = lowered.match_indices('<').find_map(|(start, _)| {
-            let token = lowered[start + 1..]
+        let body_name = structural.match_indices('<').find_map(|(start, _)| {
+            let token = structural[start + 1..]
                 .split(|character: char| character.is_whitespace() || character == '>')
                 .next()
                 .unwrap_or("");
             (token == "body" || token.ends_with(":body")).then_some(token)
         });
         let body_content_nonempty = body_name.map_or(false, |body| {
-            lowered
+            structural
                 .find(&format!("<{}", body))
                 .and_then(|start| {
-                    lowered[start..].find('>').and_then(|end| {
-                        lowered[start + end + 1..]
+                    structural[start..].find('>').and_then(|end| {
+                        structural[start + end + 1..]
                             .find(&format!("</{}>", body))
                             .map(|body_end| body_end > 0)
                     })
@@ -757,9 +823,9 @@ fn select_lyric_text(
                 .unwrap_or(false)
         });
         let looks_like_ttml = root_is_tt
-            && lowered.contains(&format!("</{}>", root_name))
+            && structural.contains(&format!("</{}>", root_name))
             && body_content_nonempty
-            && has_valid_ttml_paragraph(&lowered);
+            && has_valid_ttml_paragraph(&structural);
         let looks_like_lrc = trimmed.lines().any(|line| {
             let mut remaining = line;
             while let Some(start) = remaining.find('[') {
@@ -1154,6 +1220,43 @@ mod tests {
                 "<tt><body><p begin=\"60:00\" end=\"60:01\">valid</p></body></tt>"
                     .to_string()
             )
+        );
+    }
+
+    #[test]
+    fn lyric_alias_falls_through_non_text_and_unbalanced_ttml() {
+        let candidates = vec![
+            (
+                "Lyrics".to_string(),
+                "<tt><body><p begin=\"1\" end=\"2\"><![CDATA[hidden]]></p></body></tt>"
+                    .to_string(),
+            ),
+            (
+                "LYRIC".to_string(),
+                "<tt><body><p begin=\"1\" end=\"2\">&#32;</p></body></tt>"
+                    .to_string(),
+            ),
+            (
+                "LYRICS".to_string(),
+                "<tt><body><div><p begin=\"1\" end=\"2\">broken</p></body></tt>"
+                    .to_string(),
+            ),
+            ("LYRIC".to_string(), "[00:07.00]valid lyric".to_string()),
+        ];
+
+        assert_eq!(
+            select_lyric_text(candidates),
+            Some("[00:07.00]valid lyric".to_string())
+        );
+    }
+
+    #[test]
+    fn lyric_alias_uses_dur_when_end_timestamp_is_malformed() {
+        let lyric = "<tt><body><p begin=\"1\" end=\"bad\" dur=\"2\">valid</p></body></tt>";
+
+        assert_eq!(
+            select_lyric_text(vec![("LYRICS".to_string(), lyric.to_string())]),
+            Some(lyric.to_string())
         );
     }
 

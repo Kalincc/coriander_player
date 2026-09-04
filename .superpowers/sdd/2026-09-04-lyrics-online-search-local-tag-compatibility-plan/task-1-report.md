@@ -61,3 +61,26 @@
 - Added timestamp parsing with non-negative finite values and proper 1/2/3-part range validation; attribute extraction accepts single/double quotes and whitespace around `=`.
 - Visible-text validation now ignores XML tags and comments, requiring actual text outside tags in a timed `<p>` with valid `begin` plus positive `end` or `dur`.
 - Verification: `flutter test test/library/lyric_search_index_test.dart` passed (`00:00 +22: All tests passed!`). Cargo remains unavailable, so Rust tests/compile are unverified.
+
+## Final controller correction
+
+- Aligned `parse_ttml_timestamp` with the Dart parser: decimal values are
+  non-negative finite numbers; two-part values use integer minutes (without a
+  60-minute cap) and seconds in `[0, 60)`; three-part values use integer
+  hours/minutes with minutes and seconds in `[0, 60)`. An explicit `end`
+  remains authoritative over `dur`.
+- Reworked ignored-node stripping so comments, processing instructions, and
+  CDATA cannot contribute pseudo-elements; added coverage for commented-out
+  paragraphs and the corrected timing/attribute cases. Cargo is unavailable,
+  so Rust compilation/test verification remains pending in a Rust-enabled
+  environment.
+
+## Final parser-alignment correction
+
+- Added XML element-balance validation, XML text-node entity handling, and
+  strict ignored-node removal so CDATA-only/entity-whitespace paragraphs and
+  unbalanced markup cannot mask a later valid alias or sidecar.
+- Added coverage for long-minute and multi-part timestamps, malformed explicit
+  `end` falling back to `dur`, empty CDATA/entity text, unbalanced elements,
+  and an independent positive single-quoted-attribute case. Cargo remains
+  unavailable, so Rust compile/test evidence is still pending.
