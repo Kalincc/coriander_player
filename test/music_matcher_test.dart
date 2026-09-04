@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/lyric/online_lyric_cache.dart';
 import 'package:coriander_player/music_matcher.dart';
@@ -164,14 +166,19 @@ void main() {
       fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
     ));
 
-    final lyric = await getOnlineLyric(
-      qqSongId: 1,
-      audio: audio,
-      cache: cache,
+    final lyric = await HttpOverrides.runZoned(
+      () => getOnlineLyric(
+        qqSongId: 1,
+        audio: audio,
+        cache: cache,
+      ),
+      createHttpClient: (_) => throw StateError('provider fetch was attempted'),
     );
 
     expect(lyric, isNotNull);
     expect(lyric!.lines, hasLength(1));
+    expect((lyric.lines.single as dynamic).content,
+        'cached primary┃cached translation');
   });
 }
 

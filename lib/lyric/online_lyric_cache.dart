@@ -89,6 +89,15 @@ class OnlineLyricCacheEntry {
 class OnlineLyricCache {
   static const int formatVersion = 1;
   static const Duration ttl = Duration(days: 30);
+  static final OnlineLyricCache _defaultCache = OnlineLyricCache(
+    read: () async => readOnlineLyricCacheFromDirectory(
+      await getAppDataDir(),
+    ),
+    write: (contents) async => writeOnlineLyricCacheAtomically(
+      await getAppDataDir(),
+      contents,
+    ),
+  );
 
   final Future<String?> Function() _read;
   final Future<void> Function(String contents) _write;
@@ -96,6 +105,7 @@ class OnlineLyricCache {
   final Map<String, OnlineLyricCacheEntry> _entries = {};
   bool _loaded = false;
   Future<void>? _loading;
+  Future<void> _writeTail = Future.value();
 
   OnlineLyricCache({
     required Future<String?> Function() read,
@@ -104,20 +114,7 @@ class OnlineLyricCache {
   })  : _read = read,
         _write = write;
 
-  factory OnlineLyricCache.defaults() => OnlineLyricCache(
-        read: () async {
-          final directory = await getAppDataDir();
-          final file =
-              File(path.join(directory.path, 'online_lyric_cache.json'));
-          return await file.exists() ? file.readAsString() : null;
-        },
-        write: (contents) async {
-          await writeOnlineLyricCacheAtomically(
-            await getAppDataDir(),
-            contents,
-          );
-        },
-      );
+  factory OnlineLyricCache.defaults() => _defaultCache;
 
   Future<OnlineLyricCacheEntry?> readEntry(
     String key, {
@@ -133,7 +130,13 @@ class OnlineLyricCache {
     return entry;
   }
 
-  Future<void> writeEntry(OnlineLyricCacheEntry entry) async {
+  Future<void> writeEntry(OnlineLyricCacheEntry entry) {
+    final result = _writeTail.then((_) => _writeEntry(entry));
+    _writeTail = result.catchError((_) {});
+    return result;
+  }
+
+  Future<void> _writeEntry(OnlineLyricCacheEntry entry) async {
     await _load();
     _entries[entry.key] = entry;
     _prune();
@@ -195,17 +198,36 @@ class OnlineLyricCache {
   }
 }
 
+Future<String?> readOnlineLyricCacheFromDirectory(Directory directory) async {
+  final cacheFile = File(path.join(directory.path, 'online_lyric_cache.json'));
+  final backupFile = File('${cacheFile.path}.bak');
+  if (!await cacheFile.exists() && await backupFile.exists()) {
+    await backupFile.rename(cacheFile.path);
+  }
+  await for (final entity in directory.list()) {
+    final name = path.basename(entity.path);
+    if (name == 'online_lyric_cache.json.bak' ||
+        name.startsWith('online_lyric_cache.json.tmp')) {
+      await entity.delete();
+    }
+  }
+  return await cacheFile.exists() ? cacheFile.readAsString() : null;
+}
+
+int _atomicWriteSequence = 0;
+
 Future<void> writeOnlineLyricCacheAtomically(
   Directory directory,
   String contents,
 ) async {
   final cacheFile = File(path.join(directory.path, 'online_lyric_cache.json'));
-  final temporaryFile = File('${cacheFile.path}.tmp');
+  final temporaryFile = File('${cacheFile.path}.tmp.${_atomicWriteSequence++}');
   final backupFile = File('${cacheFile.path}.bak');
   var movedCurrentToBackup = false;
   try {
     await temporaryFile.writeAsString(contents, flush: true);
     if (await cacheFile.exists()) {
+      if (await backupFile.exists()) await backupFile.delete();
       await cacheFile.rename(backupFile.path);
       movedCurrentToBackup = true;
     }
