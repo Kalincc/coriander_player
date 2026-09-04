@@ -108,7 +108,9 @@ void main() {
     );
 
     final candidate = await service.check(
-      ForkReleaseVersion.parse(currentReleaseVersion),
+      // Keep this stream-collection test independent of the app's release
+      // bump; version-specific update fixtures are covered above.
+      ForkReleaseVersion.parse('1.5.1-kalin.10'),
     );
 
     expect(candidate?.version, ForkReleaseVersion.parse('1.5.1-kalin.11'));

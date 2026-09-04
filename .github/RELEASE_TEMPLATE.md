@@ -17,7 +17,7 @@
 ## 下载与使用
 
 - `Portable.zip`：完整解压后运行 `coriander_player.exe`，不要单独复制 EXE。
-- `Setup.exe`：从 v1.5.1-kalin.10 升级到 v1.5.1-kalin.11 时覆盖原目录即可，不需要先卸载；之后安装版可使用“设置 → 检查更新 → 立即更新”。
+- `Setup.exe`：从 v1.5.1-kalin.11 升级到 v1.5.1-kalin.12 时覆盖原目录即可，不需要先卸载；之后安装版可使用“设置 → 检查更新 → 立即更新”。
 - `Portable.zip`：Portable 版不会自动安装更新，请从 Release 页面下载新压缩包并完整解压。
 - 两种发行物都包含 BASS 播放运行库和 `desktop_lyric` 桌面歌词组件。
 - 音乐库与设置保存在 `文档\coriander_player`，安装器不会删除该目录。
