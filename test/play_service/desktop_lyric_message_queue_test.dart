@@ -36,7 +36,8 @@ void main() {
     expect(json.decode(writes[1])['message']['title'], '害怕');
   });
 
-  test('a failed frame does not poison later messages', () async {
+  test('a failed frame invalidates queued messages but the queue recovers',
+      () async {
     var attempts = 0;
     final writes = <String>[];
     final queue = DesktopLyricMessageQueue((frame) async {
@@ -45,10 +46,16 @@ void main() {
       writes.add(frame);
     });
 
+    final failed = queue.enqueue(const msg.PlayerStateChangedMessage(true));
+    final dropped = queue.enqueue(const msg.PlayerStateChangedMessage(false));
+
     await expectLater(
-      queue.enqueue(const msg.PlayerStateChangedMessage(true)),
+      failed,
       throwsA(isA<StateError>()),
     );
+    await dropped;
+    expect(writes, isEmpty);
+
     await queue.enqueue(const msg.PlayerStateChangedMessage(false));
 
     expect(writes, hasLength(1));

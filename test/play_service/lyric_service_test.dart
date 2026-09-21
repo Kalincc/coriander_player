@@ -32,6 +32,31 @@ void main() {
       await delegate.close();
     }
   });
+
+  test('drops a delayed old lyric future after a newer lyric is selected',
+      () async {
+    final delegate = _ImmediateLyricDelegate();
+    final service = LyricService.withDelegate(delegate);
+    final sentLines = <String>[];
+    delegate.onLine =
+        (line) => sentLines.add((line as UnsyncLyricLine).content);
+    final oldLyric = Completer<Lyric?>();
+
+    try {
+      service.currLyricFuture = oldLyric.future;
+      service.refreshCurrentLyric();
+      service.useSpecificLyric(_lyric('当前歌曲'));
+      await Future<void>.delayed(Duration.zero);
+
+      oldLyric.complete(_lyric('旧歌曲'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sentLines, ['当前歌曲']);
+    } finally {
+      service.dispose();
+      await delegate.close();
+    }
+  });
 }
 
 Lrc _lyric(String content) => Lrc(
@@ -69,4 +94,8 @@ class _DeferredLyricDelegate implements LyricServiceDelegate {
   void sendDesktopLyricLine(LyricLine line) => onLine?.call(line);
 
   Future<void> close() => _positionController.close();
+}
+
+class _ImmediateLyricDelegate extends _DeferredLyricDelegate {
+  _ImmediateLyricDelegate() : super(Future.value(true));
 }

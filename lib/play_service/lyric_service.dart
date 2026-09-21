@@ -86,8 +86,15 @@ class LyricService extends ChangeNotifier {
   void findCurrLyricLine() => refreshCurrentLyric();
 
   void refreshCurrentLyric() {
-    currLyricFuture.then((lyric) {
-      if (_disposed || lyric == null || lyric.lines.isEmpty) return;
+    final generation = _lyricGeneration;
+    final lyricFuture = currLyricFuture;
+    lyricFuture.then((lyric) {
+      if (_disposed ||
+          generation != _lyricGeneration ||
+          lyric == null ||
+          lyric.lines.isEmpty) {
+        return;
+      }
 
       final audioPosition = _durationFromSeconds(_delegate.position);
       _updateCurrentLyricAt(audioPosition, lyric, forceEmit: true);
@@ -95,8 +102,15 @@ class LyricService extends ChangeNotifier {
   }
 
   void _handlePositionChanged(double position) {
-    currLyricFuture.then((lyric) {
-      if (_disposed || lyric == null || lyric.lines.isEmpty) return;
+    final generation = _lyricGeneration;
+    final lyricFuture = currLyricFuture;
+    lyricFuture.then((lyric) {
+      if (_disposed ||
+          generation != _lyricGeneration ||
+          lyric == null ||
+          lyric.lines.isEmpty) {
+        return;
+      }
 
       _updateCurrentLyricAt(_durationFromSeconds(position), lyric);
     });
