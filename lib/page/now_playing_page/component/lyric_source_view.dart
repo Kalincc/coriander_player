@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:coriander_player/app_preference.dart';
@@ -66,6 +67,20 @@ String lyricSourceMatchSummary(SongSearchResult result) {
   return '来源：$source · 匹配度：${(result.score * 100).round()}% · 依据：$reasons$cached';
 }
 
+Future<String?> showLyricSourceDialog({
+  required NavigatorState navigator,
+  required Audio audio,
+  Future<OnlineLyricSearchReport> Function(Audio audio)? search,
+}) {
+  return showDialog<String>(
+    context: navigator.context,
+    builder: (context) => _SetLyricSourceDialog(
+      audio: audio,
+      search: search,
+    ),
+  );
+}
+
 class SetLyricSourceBtn extends StatelessWidget {
   const SetLyricSourceBtn({
     required this.onMenuOpen,
@@ -128,6 +143,7 @@ class _SetLyricSourceBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final lyricService = PlayService.instance.lyricService;
+    final navigator = Navigator.of(context, rootNavigator: true);
     return MenuAnchor(
       onOpen: onMenuOpen,
       onClose: onMenuClose,
@@ -135,10 +151,11 @@ class _SetLyricSourceBtn extends StatelessWidget {
         MenuItemButton(
           onPressed: () {
             final nowPlaying = PlayService.instance.playbackService.nowPlaying;
-            showDialog<String>(
-              context: context,
-              builder: (context) => _SetLyricSourceDialog(audio: nowPlaying!),
-            );
+            if (nowPlaying == null || !navigator.mounted) return;
+            unawaited(showLyricSourceDialog(
+              navigator: navigator,
+              audio: nowPlaying,
+            ));
           },
           child: const Text("选择歌词源"),
         ),
@@ -172,9 +189,10 @@ class _SetLyricSourceBtn extends StatelessWidget {
 }
 
 class _SetLyricSourceDialog extends StatelessWidget {
-  const _SetLyricSourceDialog({required this.audio});
+  const _SetLyricSourceDialog({required this.audio, this.search});
 
   final Audio audio;
+  final Future<OnlineLyricSearchReport> Function(Audio audio)? search;
 
   @override
   Widget build(BuildContext context) {
@@ -219,7 +237,7 @@ class _SetLyricSourceDialog extends StatelessWidget {
               const Divider(),
               Expanded(
                 child: FutureBuilder<OnlineLyricSearchReport>(
-                  future: searchOnlineLyrics(audio),
+                  future: (search ?? searchOnlineLyrics)(audio),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState != ConnectionState.done) {
                       return const Center(

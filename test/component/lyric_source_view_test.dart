@@ -1,9 +1,38 @@
+import 'dart:async';
+
+import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/online_lyric_models.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_source_view.dart';
+import 'package:coriander_player/src/rust/api/system_theme.dart';
+import 'package:coriander_player/src/rust/frb_generated.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  setUpAll(() => RustLib.initMock(api: _TestRustLibApi()));
+
+  testWidgets(
+      'opens the lyric source dialog after the transient controls unmount',
+      (tester) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final audio = Audio('', '', '', 0, 0, null, null, 'diagnostic', 0, 0, null);
+
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navigatorKey,
+      home: _TransientLyricSourceLauncher(
+        navigatorKey: navigatorKey,
+        audio: audio,
+      ),
+    ));
+
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('选择歌词源'), findsOneWidget);
+    navigatorKey.currentState!.pop();
+  });
+
   test('selects the source preview line using the lyric clock position', () {
     final lyric = Lrc(
       [
@@ -92,4 +121,57 @@ void main() {
 
     expect(lyricSourceMatchSummary(result), contains('已缓存'));
   });
+}
+
+class _TransientLyricSourceLauncher extends StatefulWidget {
+  const _TransientLyricSourceLauncher({
+    required this.navigatorKey,
+    required this.audio,
+  });
+
+  final GlobalKey<NavigatorState> navigatorKey;
+  final Audio audio;
+
+  @override
+  State<_TransientLyricSourceLauncher> createState() =>
+      _TransientLyricSourceLauncherState();
+}
+
+class _TransientLyricSourceLauncherState
+    extends State<_TransientLyricSourceLauncher> {
+  var mountedControl = true;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!mountedControl) return const SizedBox.shrink();
+    return Builder(
+      builder: (_) => TextButton(
+        onPressed: () {
+          setState(() => mountedControl = false);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            unawaited(showLyricSourceDialog(
+              navigator: widget.navigatorKey.currentState!,
+              audio: widget.audio,
+              search: (_) async => const OnlineLyricSearchReport(
+                candidates: [],
+                statuses: [],
+              ),
+            ));
+          });
+        },
+        child: const Text('打开'),
+      ),
+    );
+  }
+}
+
+class _TestRustLibApi implements RustLibApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (invocation.memberName ==
+        #crateApiSystemThemeSystemThemeGetSystemTheme) {
+      return const SystemTheme(fore: (255, 0, 0, 0), accent: (255, 0, 0, 0));
+    }
+    throw UnimplementedError(invocation.memberName.toString());
+  }
 }
