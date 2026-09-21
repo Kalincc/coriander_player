@@ -111,7 +111,7 @@ $bassArchives = @(
     @{ Name = 'bassmidi24.zip'; Url = 'https://www.un4seen.com/files/bassmidi24.zip'; Sha256 = '317EC770D71266B5294543D7C87CBBB39ABA38BC8BC623AF518A96C670392234' },
     @{ Name = 'bassopus24.zip'; Url = 'https://www.un4seen.com/files/bassopus24.zip'; Sha256 = '1FB6E033289EA968CA1FD02DEA154A2E5D06BB9C2E33CDEDA277E63084D9AD20' },
     @{ Name = 'basswv24.zip'; Url = 'https://www.un4seen.com/files/basswv24.zip'; Sha256 = '813801639BB140FA8F6BAA8AA03AEAC47225E1E876FE943367F91C38F79C1ECA' },
-    @{ Name = 'basswasapi24.zip'; Url = 'https://www.un4seen.com/files/basswasapi24.zip'; Sha256 = '4BA99200EBEF8DCA11CC99CBA9B5DC3E51A1C467E570DE2CBC0631A038F7EA2D' }
+    @{ Name = 'basswasapi24.zip'; Url = 'https://www.un4seen.com/files/basswasapi24.zip'; Sha256 = '74B754A925FEDED1DDD6B8B7B1A37BDC9B185E86ABEBDD46B1A7E0FF67815779' }
 )
 
 $bassDownloadRoot = Join-Path $workRoot 'bass'
