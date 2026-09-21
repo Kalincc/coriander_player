@@ -35,12 +35,17 @@ class DesktopLyricMessageQueue {
 
       try {
         if (isFrameCurrent != null && !isFrameCurrent()) return;
+        var recoveryCompleted = false;
         if (_needsRecovery) {
           final recovered = _onRecovery == null ? true : await _onRecovery!();
           if (!recovered) return;
           _needsRecovery = false;
+          recoveryCompleted = true;
         }
-        if (isFrameCurrent != null && !isFrameCurrent()) return;
+        if (isFrameCurrent != null && !isFrameCurrent()) {
+          if (recoveryCompleted) _needsRecovery = true;
+          return;
+        }
         await _writeFrame(frame);
       } catch (_) {
         if (generation == _generation) {

@@ -153,4 +153,41 @@ void main() {
       contains('当前歌词'),
     ]);
   });
+
+  test('keeps recovery pending when the frame changes during recovery',
+      () async {
+    var attempts = 0;
+    var guardCalls = 0;
+    final writes = <String>[];
+    final queue = DesktopLyricMessageQueue(
+      (frame) async {
+        attempts += 1;
+        if (attempts == 1) throw StateError('pipe closed');
+        writes.add(frame);
+      },
+      onRecovery: () async {
+        writes.add('state snapshot');
+        return true;
+      },
+    );
+
+    await expectLater(
+      queue.enqueue(const msg.NowPlayingChangedMessage('旧歌', '旧作者', '旧专辑')),
+      throwsA(isA<StateError>()),
+    );
+    await queue.enqueue(
+      const msg.LyricLineChangedMessage('旧歌词', Duration(seconds: 1), null),
+      isFrameCurrent: () => ++guardCalls < 2,
+    );
+    expect(writes, ['state snapshot']);
+
+    await queue.enqueue(
+      const msg.LyricLineChangedMessage('当前歌词', Duration(seconds: 1), null),
+    );
+    expect(writes, [
+      'state snapshot',
+      'state snapshot',
+      contains('当前歌词'),
+    ]);
+  });
 }
