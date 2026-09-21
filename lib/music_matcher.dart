@@ -272,9 +272,11 @@ class _QQOnlineLyricProvider implements OnlineLyricProvider {
   @override
   Future<List<SongSearchResult>> search(String query, Audio audio) async {
     final answer = await QQ.search(keyWord: query, size: 10);
-    final data = _map(answer.data);
-    final rows =
-        _list(_map(_map(_map(data['req'])['data'])['body'])['item_song']);
+    final data = _searchMap(answer.data, source, '根响应');
+    final req = _searchMap(data['req'], source, 'req');
+    final reqData = _searchMap(req['data'], source, 'req.data');
+    final body = _searchMap(reqData['body'], source, 'req.data.body');
+    final rows = _searchList(body['item_song'], source, 'item_song');
     return _mapRows(rows, source, audio, SongSearchResult.fromQQSearchResult);
   }
 
@@ -303,8 +305,9 @@ class _KuGouOnlineLyricProvider implements OnlineLyricProvider {
   @override
   Future<List<SongSearchResult>> search(String query, Audio audio) async {
     final answer = await KuGou.searchSong(keyword: query, size: 10);
-    final data = _map(answer.data);
-    final rows = _list(_map(data['data'])['info']);
+    final data = _searchMap(answer.data, source, '根响应');
+    final responseData = _searchMap(data['data'], source, 'data');
+    final rows = _searchList(responseData['info'], source, 'data.info');
     return _mapRows(
         rows, source, audio, SongSearchResult.fromKugouSearchResult);
   }
@@ -330,8 +333,9 @@ class _NeteaseOnlineLyricProvider implements OnlineLyricProvider {
   @override
   Future<List<SongSearchResult>> search(String query, Audio audio) async {
     final answer = await Netease.search(keyWord: query, size: 10);
-    final data = _map(answer.data);
-    final rows = _list(_map(data['result'])['songs']);
+    final data = _searchMap(answer.data, source, '根响应');
+    final result = _searchMap(data['result'], source, 'result');
+    final rows = _searchList(result['songs'], source, 'result.songs');
     return _mapRows(
         rows, source, audio, SongSearchResult.fromNeteaseSearchResult);
   }
@@ -358,6 +362,16 @@ Map _map(Object? value) => value is Map ? value : const {};
 
 List _list(Object? value) => value is List ? value : const [];
 
+Map _searchMap(Object? value, ResultSource source, String field) {
+  if (value is Map) return value;
+  throw FormatException('${source.name} 搜索响应结构异常：$field');
+}
+
+List _searchList(Object? value, ResultSource source, String field) {
+  if (value is List) return value;
+  throw FormatException('${source.name} 搜索响应结构异常：$field');
+}
+
 List<SongSearchResult> _mapRows(
   List rows,
   ResultSource source,
@@ -365,9 +379,11 @@ List<SongSearchResult> _mapRows(
   SongSearchResult Function(Map, Audio) mapper,
 ) {
   final results = <SongSearchResult>[];
+  var malformedRows = 0;
   for (final row in rows) {
     if (row is! Map) {
       LOGGER.e('${source.name}: skipped malformed search row');
+      malformedRows++;
       continue;
     }
     try {
@@ -375,7 +391,11 @@ List<SongSearchResult> _mapRows(
     } catch (err, trace) {
       LOGGER.e('${source.name}: skipped malformed search row: $err',
           stackTrace: trace);
+      malformedRows++;
     }
+  }
+  if (rows.isNotEmpty && results.isEmpty && malformedRows > 0) {
+    throw FormatException('${source.name} 搜索候选格式异常');
   }
   return results;
 }
