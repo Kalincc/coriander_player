@@ -28,31 +28,31 @@
 - Consumes: `desktop_lyric.Message`, `Future<Process?>` readiness and a frame writer.
 - Produces: `DesktopLyricMessageQueue.enqueue(Message)`, which serializes one newline-terminated JSON frame at a time.
 
-- [ ] **Step 1: Write the failing queue tests**
+- [x] **Step 1: Write the failing queue tests**
 
 覆盖以下行为：首条写入延迟时第二条不能抢先；每个写入帧只有一条 JSON 且以换行结束；首条失败后后续消息仍可继续写入。
 
-- [ ] **Step 2: Run the focused test and verify it fails**
+- [x] **Step 2: Run the focused test and verify it fails**
 
 Run: `flutter test test/play_service/desktop_lyric_message_queue_test.dart`
 
 Expected: FAIL because `DesktopLyricMessageQueue` does not exist.
 
-- [ ] **Step 3: Implement the minimal queue**
+- [x] **Step 3: Implement the minimal queue**
 
 Use a private `Future<void> _tail` chain. Each `enqueue` appends a callback that invokes the injected `Future<void> Function(String frame)` writer with `message.buildMessageJson() + '\\n'`; update `_tail` with an error-swallowing continuation so a failed frame does not poison later frames, while returning the individual operation future to callers.
 
-- [ ] **Step 4: Integrate the queue into `DesktopLyricService`**
+- [x] **Step 4: Integrate the queue into `DesktopLyricService`**
 
 Route `sendMessage` through the queue. The injected writer resolves `desktopLyric`, verifies the process is current, writes the frame to `stdin`, and awaits `flush()`. Increment a process generation when starting or killing the companion so queued frames from a dead process are ignored.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `flutter test test/play_service/desktop_lyric_message_queue_test.dart test/play_service/desktop_lyric_service_test.dart`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add lib/play_service/desktop_lyric_message_queue.dart lib/play_service/desktop_lyric_service.dart test/play_service/desktop_lyric_message_queue_test.dart
@@ -71,27 +71,27 @@ git commit -m "fix: serialize desktop lyric messages"
 - Consumes: current `_loadAndPlay` request and lyric source changes.
 - Produces: only the latest playback request may send metadata; only the latest lyric generation may send a line.
 
-- [ ] **Step 1: Write the failing generation tests**
+- [x] **Step 1: Write the failing generation tests**
 
 Add a deferred desktop-message readiness test proving an older playback request cannot send its metadata after a newer request, and a lyric delegate test proving a delayed old line is ignored after `useSpecificLyric` starts a newer generation.
 
-- [ ] **Step 2: Run focused tests and verify the expected failures**
+- [x] **Step 2: Run focused tests and verify the expected failures**
 
 Run: `flutter test test/play_service/desktop_lyric_service_test.dart test/play_service/lyric_service_test.dart`
 
 Expected: FAIL because there is no playback/lyric generation guard.
 
-- [ ] **Step 3: Implement the smallest guards**
+- [x] **Step 3: Implement the smallest guards**
 
 Increment a playback request counter at `_loadAndPlay` entry; capture the local `Audio` and check the counter before sending state/metadata. Increment a lyric generation counter whenever a new lyric future is selected; capture and check it before refresh and before sending a desktop line.
 
-- [ ] **Step 4: Run the focused tests**
+- [x] **Step 4: Run the focused tests**
 
 Run: `flutter test test/play_service/desktop_lyric_service_test.dart test/play_service/lyric_service_test.dart`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add lib/play_service/playback_service.dart lib/play_service/lyric_service.dart test/play_service/desktop_lyric_service_test.dart test/play_service/lyric_service_test.dart
@@ -110,35 +110,35 @@ git commit -m "fix: drop stale desktop lyric updates"
 - Consumes: a checked-out `desktop_lyric` source directory.
 - Produces: a patched controller using `LineSplitter`, and a release build that refuses to continue if patching fails.
 
-- [ ] **Step 1: Write the failing PowerShell patch test**
+- [x] **Step 1: Write the failing PowerShell patch test**
 
 Create a temporary fixture containing the pinned controller parser, invoke the patch script, assert `LineSplitter` is present and the direct chunk parser is gone, then invoke the script against a mismatched fixture and assert a non-zero failure.
 
-- [ ] **Step 2: Run the script test and verify it fails**
+- [x] **Step 2: Run the script test and verify it fails**
 
 Run: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/desktop_lyric_protocol_test.ps1`
 
 Expected: FAIL because the patch script does not exist.
 
-- [ ] **Step 3: Implement the guarded patch script**
+- [x] **Step 3: Implement the guarded patch script**
 
 Resolve the exact controller path, replace only the known parser block, and throw if the expected source text is absent or already partially modified. Keep the replacement line-buffered and continue after per-line JSON errors.
 
-- [ ] **Step 4: Integrate patching into `package_windows.ps1`**
+- [x] **Step 4: Integrate patching into `package_windows.ps1`**
 
 Run the patch script immediately after checkout and before `flutter pub get`; retain the existing pinned commit and fail fast on any patch error.
 
-- [ ] **Step 5: Update manual build documentation**
+- [x] **Step 5: Update manual build documentation**
 
 Document the patch command between cloning/checking out `desktop_lyric` and building it, and state that release packages already contain the patched companion.
 
-- [ ] **Step 6: Run script tests**
+- [x] **Step 6: Run script tests**
 
 Run: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/desktop_lyric_protocol_test.ps1`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add scripts/patch_desktop_lyric_protocol.ps1 scripts/tests/desktop_lyric_protocol_test.ps1 scripts/package_windows.ps1 README.md
@@ -150,19 +150,19 @@ git commit -m "fix: frame desktop lyric protocol"
 **Files:**
 - Test: all Flutter tests, analyzer, PowerShell release tests, and `git diff --check`.
 
-- [ ] **Step 1: Run focused regression tests**
+- [x] **Step 1: Run focused regression tests**
 
 Run: `flutter test test/play_service/desktop_lyric_message_queue_test.dart test/play_service/desktop_lyric_service_test.dart test/play_service/lyric_service_test.dart`
 
-- [ ] **Step 2: Run the full Flutter suite**
+- [x] **Step 2: Run the full Flutter suite**
 
 Run: `flutter test`
 
-- [ ] **Step 3: Run analyzer and PowerShell checks**
+- [x] **Step 3: Run analyzer and PowerShell checks**
 
 Run: `flutter analyze --no-fatal-infos lib test`; then run `scripts/tests/desktop_lyric_protocol_test.ps1`, `scripts/tests/release_helpers_test.ps1`, and `scripts/tests/installer_contract_test.ps1`.
 
-- [ ] **Step 4: Check the diff**
+- [x] **Step 4: Check the diff**
 
 Run: `git diff --check` and `git status --short --branch`. Restore only Flutter-generated Windows files if test tooling rewrites them.
 
