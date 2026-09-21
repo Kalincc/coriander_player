@@ -38,15 +38,32 @@ String lyricSourcePreviewText(
       '${translation == null ? '' : '┃$translation'}';
 }
 
-String lyricSourceMatchSummary(SongSearchResult result) {
-  final source = switch (result.source) {
-    ResultSource.qq => 'QQ音乐',
-    ResultSource.kugou => '酷狗音乐',
-    ResultSource.netease => '网易云音乐',
+String lyricSourceName(ResultSource source) => switch (source) {
+      ResultSource.qq => 'QQ音乐',
+      ResultSource.kugou => '酷狗音乐',
+      ResultSource.netease => '网易云音乐',
+    };
+
+String lyricProviderStatusText(LyricProviderSearchStatus status) {
+  final source = lyricSourceName(status.source);
+  final count = status.candidateCount;
+  final detail = status.errorMessage?.trim();
+  return switch (status.state) {
+    LyricProviderSearchState.found => '$source：找到 $count 条候选',
+    LyricProviderSearchState.noResults => '$source：无有效结果',
+    LyricProviderSearchState.failed =>
+      '$source：搜索失败${detail == null || detail.isEmpty ? '' : '（$detail）'}',
+    LyricProviderSearchState.partial =>
+      '$source：找到 $count 条（${detail == null || detail.isEmpty ? '部分失败' : detail}）',
   };
+}
+
+String lyricSourceMatchSummary(SongSearchResult result) {
+  final source = lyricSourceName(result.source);
   final reasons =
       result.matchReasons.isEmpty ? '无' : result.matchReasons.join('、');
-  return '来源：$source · 匹配度：${(result.score * 100).round()}% · 依据：$reasons';
+  final cached = result.fromCache ? ' · 已缓存' : '';
+  return '来源：$source · 匹配度：${(result.score * 100).round()}% · 依据：$reasons$cached';
 }
 
 class SetLyricSourceBtn extends StatelessWidget {
@@ -123,7 +140,7 @@ class _SetLyricSourceBtn extends StatelessWidget {
               builder: (context) => _SetLyricSourceDialog(audio: nowPlaying!),
             );
           },
-          child: const Text("指定默认歌词"),
+          child: const Text("选择歌词源"),
         ),
         MenuItemButton(
           onPressed: lyricService.useOnlineLyric,
@@ -166,7 +183,11 @@ class _SetLyricSourceDialog extends StatelessWidget {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 384, maxWidth: 600),
+        constraints: const BoxConstraints(
+          minWidth: 384,
+          maxWidth: 600,
+          maxHeight: 600,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -175,7 +196,7 @@ class _SetLyricSourceDialog extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Text(
-                  "默认歌词",
+                  "选择歌词源",
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontSize: 18.0,
@@ -197,10 +218,10 @@ class _SetLyricSourceDialog extends StatelessWidget {
               ),
               const Divider(),
               Expanded(
-                child: FutureBuilder(
-                  future: uniSearch(audio),
+                child: FutureBuilder<OnlineLyricSearchReport>(
+                  future: searchOnlineLyrics(audio),
                   builder: (context, snapshot) {
-                    if (snapshot.data == null) {
+                    if (snapshot.connectionState != ConnectionState.done) {
                       return const Center(
                         child: SizedBox(
                           width: 24,
@@ -209,12 +230,32 @@ class _SetLyricSourceDialog extends StatelessWidget {
                         ),
                       );
                     }
-                    return ListView.builder(
-                      itemCount: snapshot.data!.length,
-                      itemBuilder: (context, i) => _LyricSourceTile(
-                        audio: audio,
-                        searchResult: snapshot.data![i],
-                      ),
+                    if (snapshot.hasError || snapshot.data == null) {
+                      return Center(
+                        child: Text(
+                          '歌词搜索失败：${snapshot.error ?? '未知错误'}',
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    }
+                    final report = snapshot.data!;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _LyricProviderStatusStrip(statuses: report.statuses),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: report.candidates.isEmpty
+                              ? const _LyricSearchEmptyState()
+                              : ListView.builder(
+                                  itemCount: report.candidates.length,
+                                  itemBuilder: (context, i) => _LyricSourceTile(
+                                    audio: audio,
+                                    searchResult: report.candidates[i],
+                                  ),
+                                ),
+                        ),
+                      ],
                     );
                   },
                 ),
@@ -225,6 +266,58 @@ class _SetLyricSourceDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LyricProviderStatusStrip extends StatelessWidget {
+  const _LyricProviderStatusStrip({required this.statuses});
+
+  final List<LyricProviderSearchStatus> statuses;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        for (final status in statuses)
+          Tooltip(
+            message: status.errorMessage ?? lyricProviderStatusText(status),
+            child: Chip(
+              visualDensity: VisualDensity.compact,
+              avatar: Icon(
+                switch (status.state) {
+                  LyricProviderSearchState.found => Symbols.check_circle,
+                  LyricProviderSearchState.noResults => Symbols.search_off,
+                  LyricProviderSearchState.failed => Symbols.error,
+                  LyricProviderSearchState.partial => Symbols.warning,
+                },
+                size: 16,
+              ),
+              label: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 260),
+                child: Text(
+                  lyricProviderStatusText(status),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _LyricSearchEmptyState extends StatelessWidget {
+  const _LyricSearchEmptyState();
+
+  @override
+  Widget build(BuildContext context) => const Center(
+        child: Text(
+          '没有找到可用歌词候选\n请检查歌曲标题、歌手标签或网络连接',
+          textAlign: TextAlign.center,
+        ),
+      );
 }
 
 class _LyricSourceTile extends StatefulWidget {

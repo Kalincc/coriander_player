@@ -463,6 +463,82 @@ void main() {
     expect(fetches, 1);
     expect(lyric, isNotNull);
   });
+
+  test('search report keeps other candidates and records provider failure',
+      () async {
+    final report = await searchOnlineLyrics(makeAudio('report.flac', 9),
+        providers: [
+          FakeProvider(
+            ResultSource.qq,
+            search: (_, __) => throw StateError('qq unavailable'),
+          ),
+          FakeProvider(
+            ResultSource.netease,
+            search: (_, __) async => [
+              candidate(ResultSource.netease, '红豆', '王菲', '唱游', id: 2),
+            ],
+          ),
+        ],
+        cache: memoryCache());
+
+    expect(report.candidates, hasLength(1));
+    expect(report.candidates.single.source, ResultSource.netease);
+    final qqStatus = report.statuses
+        .singleWhere((status) => status.source == ResultSource.qq);
+    expect(qqStatus.state, LyricProviderSearchState.failed);
+    expect(qqStatus.errorMessage, contains('qq unavailable'));
+  });
+
+  test(
+      'search report exposes a valid cached candidate when live search is empty',
+      () async {
+    final audio = makeAudio('cached-report.flac', 10);
+    final cache = memoryCache();
+    await cache.writeEntry(OnlineLyricCacheEntry(
+      key: 'qq:1',
+      audioFingerprint: audioLyricFingerprint(audio),
+      payload: const OnlineLyricPayload(
+        OnlineLyricFormat.lrc,
+        '[00:01.00]cached lyric',
+      ),
+      title: audio.title,
+      artists: audio.artist,
+      album: audio.album,
+      score: .95,
+      fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
+    ));
+
+    final report = await searchOnlineLyrics(
+      audio,
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (_, __) async => const [],
+        ),
+      ],
+      cache: cache,
+    );
+
+    expect(report.candidates, hasLength(1));
+    expect(report.candidates.single.fromCache, isTrue);
+    expect(report.candidates.single.qqSongId, 1);
+    expect(report.candidates.single.title, audio.title);
+    expect(report.statuses.single.state, LyricProviderSearchState.noResults);
+
+    final lyric = await getOnlineLyric(
+      audio: audio,
+      candidate: report.candidates.single,
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (_, __) async => const [],
+          fetch: (_) => throw StateError('cache should avoid fetch'),
+        ),
+      ],
+      cache: cache,
+    );
+    expect(lyric, isNotNull);
+  });
 }
 
 OnlineLyricCache memoryCache() => OnlineLyricCache(

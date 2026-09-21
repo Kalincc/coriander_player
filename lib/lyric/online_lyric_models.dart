@@ -5,6 +5,32 @@ import 'package:coriander_player/lyric/music_match_normalizer.dart';
 
 enum ResultSource { qq, kugou, netease }
 
+enum LyricProviderSearchState { found, noResults, failed, partial }
+
+class LyricProviderSearchStatus {
+  final ResultSource source;
+  final LyricProviderSearchState state;
+  final int candidateCount;
+  final String? errorMessage;
+
+  const LyricProviderSearchStatus({
+    required this.source,
+    required this.state,
+    required this.candidateCount,
+    this.errorMessage,
+  });
+}
+
+class OnlineLyricSearchReport {
+  final List<SongSearchResult> candidates;
+  final List<LyricProviderSearchStatus> statuses;
+
+  const OnlineLyricSearchReport({
+    required this.candidates,
+    required this.statuses,
+  });
+}
+
 enum OnlineLyricFormat { lrc, krc, qrc }
 
 class OnlineLyricPayload {
@@ -33,6 +59,7 @@ class SongSearchResult {
   final String? neteaseSongId;
   final String? kugouSongHash;
   final int? durationSeconds;
+  final bool fromCache;
 
   /// Score explanations are completed after a provider row is constructed.
   final List<String> matchReasons;
@@ -47,6 +74,7 @@ class SongSearchResult {
     this.neteaseSongId,
     this.kugouSongHash,
     this.durationSeconds,
+    this.fromCache = false,
     List<String>? matchReasons,
   }) : matchReasons = matchReasons ?? <String>[];
 

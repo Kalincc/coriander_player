@@ -58,4 +58,38 @@ void main() {
     expect(summary, contains('标题一致'));
     expect(summary, contains('歌手一致'));
   });
+
+  test('provider status label explains empty and failed searches', () {
+    expect(
+      lyricProviderStatusText(const LyricProviderSearchStatus(
+        source: ResultSource.qq,
+        state: LyricProviderSearchState.noResults,
+        candidateCount: 0,
+      )),
+      'QQ音乐：无有效结果',
+    );
+    expect(
+      lyricProviderStatusText(const LyricProviderSearchStatus(
+        source: ResultSource.kugou,
+        state: LyricProviderSearchState.failed,
+        candidateCount: 0,
+        errorMessage: '请求超时',
+      )),
+      contains('请求超时'),
+    );
+  });
+
+  test('match summary marks cached lyric candidates', () {
+    final result = SongSearchResult(
+      ResultSource.qq,
+      '红豆',
+      '王菲',
+      '唱游',
+      .95,
+      qqSongId: 1,
+      fromCache: true,
+    );
+
+    expect(lyricSourceMatchSummary(result), contains('已缓存'));
+  });
 }

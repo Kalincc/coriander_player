@@ -18,13 +18,46 @@ Future<List<SongSearchResult>> uniSearch(
   Iterable<OnlineLyricProvider>? providers,
   Duration providerTimeout = const Duration(seconds: 8),
 }) async {
-  final activeProviders = providers ?? _defaultOnlineLyricProviders;
-  final results = await Future.wait(
+  final activeProviders =
+      (providers ?? _defaultOnlineLyricProviders).toList(growable: false);
+  final outcomes = await Future.wait(
     activeProviders
         .map((provider) => _searchProvider(provider, audio, providerTimeout)),
   );
+  return _mergeSearchResults(outcomes.expand((outcome) => outcome.rows));
+}
+
+Future<OnlineLyricSearchReport> searchOnlineLyrics(
+  Audio audio, {
+  Iterable<OnlineLyricProvider>? providers,
+  OnlineLyricCache? cache,
+  Duration providerTimeout = const Duration(seconds: 8),
+}) async {
+  final activeProviders =
+      (providers ?? _defaultOnlineLyricProviders).toList(growable: false);
+  final outcomes = await Future.wait(
+    activeProviders
+        .map((provider) => _searchProvider(provider, audio, providerTimeout)),
+  );
+  final liveCandidates =
+      _mergeSearchResults(outcomes.expand((outcome) => outcome.rows));
+  final cachedCandidates = await _readCachedCandidates(
+    audio,
+    cache ?? OnlineLyricCache.defaults(),
+  );
+  return OnlineLyricSearchReport(
+    candidates: _mergeCachedCandidates(cachedCandidates, liveCandidates),
+    statuses: [
+      for (final outcome in outcomes) _statusForOutcome(outcome),
+    ],
+  );
+}
+
+List<SongSearchResult> _mergeSearchResults(
+  Iterable<SongSearchResult> results,
+) {
   final unique = <String, SongSearchResult>{};
-  for (final result in results.expand((rows) => rows)) {
+  for (final result in results) {
     final key = '${result.source.name}\u001f${musicCandidateKey(
       title: result.title,
       artists: result.artists,
@@ -43,38 +76,65 @@ Future<List<SongSearchResult>> uniSearch(
   return merged;
 }
 
-Future<List<SongSearchResult>> _searchProvider(
+class _ProviderSearchOutcome {
+  final OnlineLyricProvider provider;
+  final List<SongSearchResult> rows;
+  final String? errorMessage;
+
+  const _ProviderSearchOutcome({
+    required this.provider,
+    required this.rows,
+    this.errorMessage,
+  });
+}
+
+Future<_ProviderSearchOutcome> _searchProvider(
   OnlineLyricProvider provider,
   Audio audio,
   Duration providerTimeout,
 ) async {
   final queries = musicSearchQueriesFor(audio);
-  if (queries.isEmpty) return const [];
+  if (queries.isEmpty) {
+    return _ProviderSearchOutcome(provider: provider, rows: const []);
+  }
   final stopwatch = Stopwatch()..start();
+  String? errorMessage;
 
   Future<List<SongSearchResult>?> searchBeforeDeadline(String query) async {
     final remaining = providerTimeout - stopwatch.elapsed;
     if (remaining <= Duration.zero) {
       LOGGER.e('${provider.source.name} provider search timed out');
+      errorMessage ??= '请求超时';
       return null;
     }
     try {
-      return await provider.search(query, audio).timeout(
+      final request = provider
+          .search(query, audio)
+          .then<List<SongSearchResult>?>((rows) => rows);
+      return await request.timeout(
         remaining,
         onTimeout: () {
           LOGGER.e('${provider.source.name} provider search timed out');
-          return const [];
+          errorMessage ??= '请求超时';
+          return null;
         },
       );
     } catch (err, trace) {
       LOGGER.e('${provider.source.name} provider search failed: $err',
           stackTrace: trace);
+      errorMessage ??= _providerErrorMessage(err);
       return null;
     }
   }
 
   final first = await searchBeforeDeadline(queries.first);
-  if (first == null) return const [];
+  if (first == null) {
+    return _ProviderSearchOutcome(
+      provider: provider,
+      rows: const [],
+      errorMessage: errorMessage ?? '搜索失败',
+    );
+  }
   final rows = <SongSearchResult>[...first];
   List<SongSearchResult> titleOnly = const [];
   final hasTitleOnlyQuery =
@@ -82,7 +142,11 @@ Future<List<SongSearchResult>> _searchProvider(
   if (first.length < 5 && hasTitleOnlyQuery) {
     final response = await searchBeforeDeadline(queries[1]);
     if (response == null) {
-      return _rankProviderRows(rows, provider.source, audio);
+      return _ProviderSearchOutcome(
+        provider: provider,
+        rows: _rankProviderRows(rows, provider.source, audio),
+        errorMessage: errorMessage,
+      );
     }
     titleOnly = response;
     rows.addAll(titleOnly);
@@ -91,11 +155,42 @@ Future<List<SongSearchResult>> _searchProvider(
   if (first.isEmpty && titleOnly.isEmpty && queries.length > albumQueryIndex) {
     final response = await searchBeforeDeadline(queries[albumQueryIndex]);
     if (response == null) {
-      return _rankProviderRows(rows, provider.source, audio);
+      return _ProviderSearchOutcome(
+        provider: provider,
+        rows: _rankProviderRows(rows, provider.source, audio),
+        errorMessage: errorMessage,
+      );
     }
     rows.addAll(response);
   }
-  return _rankProviderRows(rows, provider.source, audio);
+  return _ProviderSearchOutcome(
+    provider: provider,
+    rows: _rankProviderRows(rows, provider.source, audio),
+    errorMessage: errorMessage,
+  );
+}
+
+String _providerErrorMessage(Object error) {
+  final message = error.toString().trim();
+  if (message.isEmpty) return '搜索失败';
+  return message.replaceFirst(RegExp(r'^[^:]+:\s*'), '');
+}
+
+LyricProviderSearchStatus _statusForOutcome(_ProviderSearchOutcome outcome) {
+  final hasResults = outcome.rows.isNotEmpty;
+  final hasError = outcome.errorMessage?.trim().isNotEmpty == true;
+  final state = switch ((hasResults, hasError)) {
+    (true, false) => LyricProviderSearchState.found,
+    (true, true) => LyricProviderSearchState.partial,
+    (false, true) => LyricProviderSearchState.failed,
+    (false, false) => LyricProviderSearchState.noResults,
+  };
+  return LyricProviderSearchStatus(
+    source: outcome.provider.source,
+    state: state,
+    candidateCount: outcome.rows.length,
+    errorMessage: outcome.errorMessage,
+  );
 }
 
 List<SongSearchResult> _rankProviderRows(
@@ -308,6 +403,104 @@ Lyric? parseOnlineLyricPayload(OnlineLyricPayload payload) {
     LOGGER.e('Could not parse online lyric payload: $error', stackTrace: trace);
     return null;
   }
+}
+
+Future<List<SongSearchResult>> _readCachedCandidates(
+  Audio audio,
+  OnlineLyricCache cache,
+) async {
+  try {
+    final entries = await cache.readEntriesForAudioFingerprint(
+      audioLyricFingerprint(audio),
+    );
+    final candidates = <SongSearchResult>[];
+    for (final entry in entries) {
+      if (parseOnlineLyricPayload(entry.payload) == null) continue;
+      final candidate = _cachedCandidate(entry, audio);
+      if (candidate != null) candidates.add(candidate);
+    }
+    return candidates;
+  } catch (error, trace) {
+    LOGGER.e('Could not read cached lyric candidates: $error',
+        stackTrace: trace);
+    return const [];
+  }
+}
+
+SongSearchResult? _cachedCandidate(
+  OnlineLyricCacheEntry entry,
+  Audio audio,
+) {
+  final separator = entry.key.indexOf(':');
+  if (separator <= 0 || separator == entry.key.length - 1) return null;
+  final sourceName = entry.key.substring(0, separator);
+  final providerId = entry.key.substring(separator + 1);
+  final title = entry.title.trim().isEmpty ? audio.title : entry.title;
+  final artists = entry.artists.trim().isEmpty ? audio.artist : entry.artists;
+  final album = entry.album.trim().isEmpty ? audio.album : entry.album;
+  const cacheReasons = ['缓存命中'];
+  final qqSongId = int.tryParse(providerId);
+  return switch (sourceName) {
+    'qq' when qqSongId == null => null,
+    'qq' => SongSearchResult(
+        ResultSource.qq,
+        title,
+        artists,
+        album,
+        entry.score,
+        qqSongId: qqSongId,
+        fromCache: true,
+        matchReasons: cacheReasons,
+      ),
+    'kugou' => SongSearchResult(
+        ResultSource.kugou,
+        title,
+        artists,
+        album,
+        entry.score,
+        kugouSongHash: providerId,
+        fromCache: true,
+        matchReasons: cacheReasons,
+      ),
+    'netease' => SongSearchResult(
+        ResultSource.netease,
+        title,
+        artists,
+        album,
+        entry.score,
+        neteaseSongId: providerId,
+        fromCache: true,
+        matchReasons: cacheReasons,
+      ),
+    _ => null,
+  };
+}
+
+List<SongSearchResult> _mergeCachedCandidates(
+  Iterable<SongSearchResult> cached,
+  Iterable<SongSearchResult> live,
+) {
+  final merged = <SongSearchResult>[];
+  final seen = <String>{};
+  void add(SongSearchResult candidate) {
+    final providerId = _providerIdFor(candidate);
+    final key = providerId == null
+        ? '${candidate.source.name}\u001f${musicCandidateKey(
+            title: candidate.title,
+            artists: candidate.artists,
+            album: candidate.album,
+          )}'
+        : '${candidate.source.name}:$providerId';
+    if (seen.add(key)) merged.add(candidate);
+  }
+
+  for (final candidate in cached) {
+    add(candidate);
+  }
+  for (final candidate in live) {
+    add(candidate);
+  }
+  return merged;
 }
 
 Future<Lyric?> getOnlineLyric({
