@@ -88,6 +88,25 @@ class _ProviderSearchOutcome {
   });
 }
 
+class _ProviderQueryResult {
+  final List<SongSearchResult> rows;
+  final String? errorMessage;
+
+  const _ProviderQueryResult({
+    required this.rows,
+    this.errorMessage,
+  });
+}
+
+class _ProviderSearchDataError extends FormatException {
+  final List<SongSearchResult> rows;
+
+  _ProviderSearchDataError({
+    required this.rows,
+    required String message,
+  }) : super(message);
+}
+
 Future<_ProviderSearchOutcome> _searchProvider(
   OnlineLyricProvider provider,
   Audio audio,
@@ -100,7 +119,7 @@ Future<_ProviderSearchOutcome> _searchProvider(
   final stopwatch = Stopwatch()..start();
   String? errorMessage;
 
-  Future<List<SongSearchResult>?> searchBeforeDeadline(String query) async {
+  Future<_ProviderQueryResult?> searchBeforeDeadline(String query) async {
     final remaining = providerTimeout - stopwatch.elapsed;
     if (remaining <= Duration.zero) {
       LOGGER.e('${provider.source.name} provider search timed out');
@@ -108,9 +127,8 @@ Future<_ProviderSearchOutcome> _searchProvider(
       return null;
     }
     try {
-      final request = provider
-          .search(query, audio)
-          .then<List<SongSearchResult>?>((rows) => rows);
+      final request = provider.search(query, audio).then<_ProviderQueryResult?>(
+          (rows) => _ProviderQueryResult(rows: rows));
       return await request.timeout(
         remaining,
         onTimeout: () {
@@ -120,6 +138,20 @@ Future<_ProviderSearchOutcome> _searchProvider(
         },
       );
     } catch (err, trace) {
+      if (err is _ProviderSearchDataError) {
+        errorMessage ??= err.message;
+        return _ProviderQueryResult(
+          rows: err.rows,
+          errorMessage: err.message,
+        );
+      }
+      if (err is FormatException) {
+        errorMessage ??= _providerErrorMessage(err);
+        return _ProviderQueryResult(
+          rows: const [],
+          errorMessage: errorMessage,
+        );
+      }
       LOGGER.e('${provider.source.name} provider search failed: $err',
           stackTrace: trace);
       errorMessage ??= _providerErrorMessage(err);
@@ -135,11 +167,12 @@ Future<_ProviderSearchOutcome> _searchProvider(
       errorMessage: errorMessage ?? '搜索失败',
     );
   }
-  final rows = <SongSearchResult>[...first];
+  final rows = <SongSearchResult>[...first.rows];
+  errorMessage ??= first.errorMessage;
   List<SongSearchResult> titleOnly = const [];
   final hasTitleOnlyQuery =
       audio.artist.trim().isNotEmpty && queries.length > 1;
-  if (first.length < 5 && hasTitleOnlyQuery) {
+  if (first.rows.length < 5 && hasTitleOnlyQuery) {
     final response = await searchBeforeDeadline(queries[1]);
     if (response == null) {
       return _ProviderSearchOutcome(
@@ -148,11 +181,14 @@ Future<_ProviderSearchOutcome> _searchProvider(
         errorMessage: errorMessage,
       );
     }
-    titleOnly = response;
+    errorMessage ??= response.errorMessage;
+    titleOnly = response.rows;
     rows.addAll(titleOnly);
   }
   final albumQueryIndex = hasTitleOnlyQuery ? 2 : 1;
-  if (first.isEmpty && titleOnly.isEmpty && queries.length > albumQueryIndex) {
+  if (first.rows.isEmpty &&
+      titleOnly.isEmpty &&
+      queries.length > albumQueryIndex) {
     final response = await searchBeforeDeadline(queries[albumQueryIndex]);
     if (response == null) {
       return _ProviderSearchOutcome(
@@ -161,7 +197,8 @@ Future<_ProviderSearchOutcome> _searchProvider(
         errorMessage: errorMessage,
       );
     }
-    rows.addAll(response);
+    errorMessage ??= response.errorMessage;
+    rows.addAll(response.rows);
   }
   return _ProviderSearchOutcome(
     provider: provider,
@@ -360,16 +397,20 @@ class _NeteaseOnlineLyricProvider implements OnlineLyricProvider {
 
 Map _map(Object? value) => value is Map ? value : const {};
 
-List _list(Object? value) => value is List ? value : const [];
-
 Map _searchMap(Object? value, ResultSource source, String field) {
   if (value is Map) return value;
-  throw FormatException('${source.name} 搜索响应结构异常：$field');
+  throw _ProviderSearchDataError(
+    rows: const [],
+    message: '${source.name} 搜索响应结构异常：$field',
+  );
 }
 
 List _searchList(Object? value, ResultSource source, String field) {
   if (value is List) return value;
-  throw FormatException('${source.name} 搜索响应结构异常：$field');
+  throw _ProviderSearchDataError(
+    rows: const [],
+    message: '${source.name} 搜索响应结构异常：$field',
+  );
 }
 
 List<SongSearchResult> _mapRows(
@@ -395,7 +436,16 @@ List<SongSearchResult> _mapRows(
     }
   }
   if (rows.isNotEmpty && results.isEmpty && malformedRows > 0) {
-    throw FormatException('${source.name} 搜索候选格式异常');
+    throw _ProviderSearchDataError(
+      rows: results,
+      message: '${source.name} 搜索候选格式异常',
+    );
+  }
+  if (malformedRows > 0) {
+    throw _ProviderSearchDataError(
+      rows: results,
+      message: '${source.name} 搜索候选包含格式异常项',
+    );
   }
   return results;
 }

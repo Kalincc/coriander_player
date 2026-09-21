@@ -489,6 +489,32 @@ void main() {
     expect(qqStatus.errorMessage, contains('qq unavailable'));
   });
 
+  test('malformed search response still reaches a later fallback query',
+      () async {
+    var searches = 0;
+    final report = await searchOnlineLyrics(
+      makeAudio('malformed-fallback.flac', 11),
+      providers: [
+        FakeProvider(
+          ResultSource.qq,
+          search: (_, __) async {
+            if (++searches == 1) {
+              throw const FormatException('response shape changed');
+            }
+            return [candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 3)];
+          },
+        ),
+      ],
+      cache: memoryCache(),
+    );
+
+    expect(report.candidates, hasLength(1));
+    expect(report.candidates.single.qqSongId, 3);
+    expect(report.statuses.single.state, LyricProviderSearchState.partial);
+    expect(report.statuses.single.errorMessage,
+        contains('response shape changed'));
+  });
+
   test(
       'search report exposes a valid cached candidate when live search is empty',
       () async {
