@@ -8,6 +8,7 @@ import 'package:coriander_player/lyric/lyric.dart';
 import 'package:coriander_player/lyric/lyric_presentation.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:coriander_player/play_service/playback_service.dart';
+import 'package:coriander_player/play_service/desktop_lyric_message_queue.dart';
 import 'package:coriander_player/src/bass/bass_player.dart';
 import 'package:coriander_player/theme_provider.dart';
 import 'package:coriander_player/utils.dart';
@@ -40,16 +41,42 @@ msg.LyricLineChangedMessage? desktopLyricLineMessage(
 
 class DesktopLyricService extends ChangeNotifier {
   final PlayService playService;
-  DesktopLyricService(this.playService);
+  DesktopLyricService(this.playService) {
+    _resetMessageQueue();
+  }
 
   PlaybackService get _playbackService => playService.playbackService;
 
   Future<Process?> desktopLyric = Future.value(null);
   StreamSubscription? _desktopLyricSubscription;
+  late DesktopLyricMessageQueue _messageQueue;
+  int _processGeneration = 0;
 
   bool isLocked = false;
 
+  void _resetMessageQueue() {
+    final generation = _processGeneration;
+    _messageQueue = DesktopLyricMessageQueue(
+      (frame) => _writeFrame(generation, frame),
+    );
+  }
+
+  Future<void> _writeFrame(int generation, String frame) async {
+    if (generation != _processGeneration) return;
+
+    final process = await desktopLyric;
+    if (generation != _processGeneration) return;
+
+    final stdin = process?.stdin;
+    if (stdin == null) return;
+    stdin.write(frame);
+    await stdin.flush();
+  }
+
   Future<void> startDesktopLyric() async {
+    _processGeneration += 1;
+    _resetMessageQueue();
+
     final desktopLyricPath = path.join(
       path.dirname(Platform.resolvedExecutable),
       "desktop_lyric",
@@ -124,17 +151,19 @@ class DesktopLyricService extends ChangeNotifier {
       );
 
   void sendMessage(msg.Message message) {
-    desktopLyric.then((value) {
-      value?.stdin.write(message.buildMessageJson());
-    }).catchError((err, trace) {
+    _messageQueue.enqueue(message).catchError((err, trace) {
       LOGGER.e(err, stackTrace: trace);
     });
   }
 
   void killDesktopLyric() {
-    desktopLyric.then((value) {
+    final process = desktopLyric;
+    _processGeneration += 1;
+    desktopLyric = Future.value(null);
+    _resetMessageQueue();
+
+    process.then((value) {
       value?.kill();
-      desktopLyric = Future.value(null);
 
       _desktopLyricSubscription?.cancel();
       _desktopLyricSubscription = null;
