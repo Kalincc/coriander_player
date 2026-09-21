@@ -62,24 +62,36 @@ class DesktopLyricService extends ChangeNotifier {
     );
   }
 
-  Future<void> _writeCurrentPlaybackState(int generation) async {
+  Future<bool> _writeCurrentPlaybackState(int generation) async {
+    final playbackState = _playbackService.playerState;
+    final isPlaying = playbackState == PlayerState.playing;
+    final nowPlaying = _playbackService.nowPlaying;
+    final title = nowPlaying?.title;
+    final artist = nowPlaying?.artist;
+    final album = nowPlaying?.album;
+
     await _writeFrame(
       generation,
-      '${msg.PlayerStateChangedMessage(
-        _playbackService.playerState == PlayerState.playing,
-      ).buildMessageJson()}\n',
+      '${msg.PlayerStateChangedMessage(isPlaying).buildMessageJson()}\n',
     );
 
-    final nowPlaying = _playbackService.nowPlaying;
-    if (nowPlaying == null) return;
-    await _writeFrame(
-      generation,
-      '${msg.NowPlayingChangedMessage(
-        nowPlaying.title,
-        nowPlaying.artist,
-        nowPlaying.album,
-      ).buildMessageJson()}\n',
-    );
+    if (nowPlaying != null) {
+      await _writeFrame(
+        generation,
+        '${msg.NowPlayingChangedMessage(
+          nowPlaying.title,
+          nowPlaying.artist,
+          nowPlaying.album,
+        ).buildMessageJson()}\n',
+      );
+    }
+
+    final current = _playbackService.nowPlaying;
+    return _playbackService.playerState == playbackState &&
+        current?.path == nowPlaying?.path &&
+        current?.title == title &&
+        current?.artist == artist &&
+        current?.album == album;
   }
 
   Future<void> _writeFrame(int generation, String frame) async {
@@ -171,8 +183,13 @@ class DesktopLyricService extends ChangeNotifier {
         (value) => value != null,
       );
 
-  void sendMessage(msg.Message message) {
-    _messageQueue.enqueue(message).catchError((err, trace) {
+  void sendMessage(
+    msg.Message message, {
+    DesktopLyricFrameGuard? isFrameCurrent,
+  }) {
+    _messageQueue
+        .enqueue(message, isFrameCurrent: isFrameCurrent)
+        .catchError((err, trace) {
       LOGGER.e(err, stackTrace: trace);
     });
   }
@@ -218,11 +235,20 @@ class DesktopLyricService extends ChangeNotifier {
   }
 
   void sendNowPlayingMessage(Audio nowPlaying) {
-    sendMessage(msg.NowPlayingChangedMessage(
-      nowPlaying.title,
-      nowPlaying.artist,
-      nowPlaying.album,
-    ));
+    sendMessage(
+      msg.NowPlayingChangedMessage(
+        nowPlaying.title,
+        nowPlaying.artist,
+        nowPlaying.album,
+      ),
+      isFrameCurrent: () {
+        final current = _playbackService.nowPlaying;
+        return current?.path == nowPlaying.path &&
+            current?.title == nowPlaying.title &&
+            current?.artist == nowPlaying.artist &&
+            current?.album == nowPlaying.album;
+      },
+    );
   }
 
   void sendLyricLineMessage(LyricLine line) {
@@ -231,6 +257,13 @@ class DesktopLyricService extends ChangeNotifier {
       showTranslation:
           AppPreference.instance.nowPlayingPagePref.showTranslation,
     );
-    if (message != null) sendMessage(message);
+    if (message != null) {
+      final audioPath = _playbackService.nowPlaying?.path;
+      sendMessage(
+        message,
+        isFrameCurrent: () =>
+            audioPath != null && _playbackService.nowPlaying?.path == audioPath,
+      );
+    }
   }
 }

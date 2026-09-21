@@ -26,11 +26,11 @@
 
 **Interfaces:**
 - Consumes: `desktop_lyric.Message`, `Future<Process?>` readiness and a frame writer.
-- Produces: `DesktopLyricMessageQueue.enqueue(Message)`, which serializes one newline-terminated JSON frame at a time.
+- Produces: `DesktopLyricMessageQueue.enqueue(Message, {isFrameCurrent})`, which serializes one newline-terminated JSON frame at a time and can recover a failed pipe with a validated playback snapshot.
 
 - [x] **Step 1: Write the failing queue tests**
 
-覆盖以下行为：首条写入延迟时第二条不能抢先；每个写入帧只有一条 JSON 且以换行结束；首条失败后后续消息仍可继续写入。
+覆盖以下行为：首条写入延迟时第二条不能抢先；每个写入帧只有一条 JSON 且以换行结束；首条失败后已排队帧被作废；恢复时先发播放状态快照，快照失效或触发帧过期时不再发送旧帧。
 
 - [x] **Step 2: Run the focused test and verify it fails**
 
@@ -40,11 +40,11 @@ Expected: FAIL because `DesktopLyricMessageQueue` does not exist.
 
 - [x] **Step 3: Implement the minimal queue**
 
-Use a private `Future<void> _tail` chain. Each `enqueue` appends a callback that invokes the injected `Future<void> Function(String frame)` writer with `message.buildMessageJson() + '\\n'`; update `_tail` with an error-swallowing continuation so a failed frame does not poison later frames, while returning the individual operation future to callers.
+Use a private `Future<void> _tail` chain and a queue generation. Each `enqueue` appends a callback that invokes the injected `Future<void> Function(String frame)` writer with `message.buildMessageJson() + '\\n'`; a failed write invalidates already queued frames. The next valid frame invokes an optional recovery callback first, and an optional frame guard is checked before and after recovery. Return the individual operation future to callers while keeping the queue usable.
 
 - [x] **Step 4: Integrate the queue into `DesktopLyricService`**
 
-Route `sendMessage` through the queue. The injected writer resolves `desktopLyric`, verifies the process is current, writes the frame to `stdin`, and awaits `flush()`. Increment a process generation when starting or killing the companion so queued frames from a dead process are ignored.
+Route `sendMessage` through the queue. The injected writer resolves `desktopLyric`, verifies the process is current, writes the frame to `stdin`, and awaits `flush()`. Increment a process generation when starting or killing the companion so queued frames from a dead process are ignored. On a failed write, recover by capturing and sending current player state plus `NowPlaying` metadata, then only release a frame whose song snapshot is still current.
 
 - [x] **Step 5: Run focused tests**
 

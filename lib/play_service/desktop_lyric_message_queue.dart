@@ -1,7 +1,8 @@
 import 'package:desktop_lyric/message.dart' as msg;
 
 typedef DesktopLyricFrameWriter = Future<void> Function(String frame);
-typedef DesktopLyricRecovery = Future<void> Function();
+typedef DesktopLyricRecovery = Future<bool> Function();
+typedef DesktopLyricFrameGuard = bool Function();
 
 /// Serializes messages sent to the desktop lyric companion.
 ///
@@ -20,7 +21,10 @@ class DesktopLyricMessageQueue {
   int _generation = 0;
   bool _needsRecovery = false;
 
-  Future<void> enqueue(msg.Message message) {
+  Future<void> enqueue(
+    msg.Message message, {
+    DesktopLyricFrameGuard? isFrameCurrent,
+  }) {
     final frame = '${message.buildMessageJson()}\n';
     final generation = _generation;
     final operation = _tail.then((_) async {
@@ -30,10 +34,13 @@ class DesktopLyricMessageQueue {
       if (generation != _generation) return;
 
       try {
+        if (isFrameCurrent != null && !isFrameCurrent()) return;
         if (_needsRecovery) {
-          if (_onRecovery != null) await _onRecovery!();
+          final recovered = _onRecovery == null ? true : await _onRecovery!();
+          if (!recovered) return;
           _needsRecovery = false;
         }
+        if (isFrameCurrent != null && !isFrameCurrent()) return;
         await _writeFrame(frame);
       } catch (_) {
         if (generation == _generation) {

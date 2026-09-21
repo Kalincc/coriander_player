@@ -73,6 +73,7 @@ void main() {
       },
       onRecovery: () async {
         writes.add('state snapshot');
+        return true;
       },
     );
 
@@ -87,6 +88,69 @@ void main() {
     expect(writes, [
       'state snapshot',
       contains('LyricLineChangedMessage'),
+    ]);
+  });
+
+  test('drops a stale frame after the recovery boundary', () async {
+    var attempts = 0;
+    final writes = <String>[];
+    final queue = DesktopLyricMessageQueue(
+      (frame) async {
+        attempts += 1;
+        if (attempts == 1) throw StateError('pipe closed');
+        writes.add(frame);
+      },
+      onRecovery: () async {
+        writes.add('state snapshot');
+        return true;
+      },
+    );
+
+    await expectLater(
+      queue.enqueue(const msg.NowPlayingChangedMessage('旧歌', '旧作者', '旧专辑')),
+      throwsA(isA<StateError>()),
+    );
+    await queue.enqueue(
+      const msg.LyricLineChangedMessage('旧歌词', Duration(seconds: 1), null),
+      isFrameCurrent: () => false,
+    );
+
+    expect(writes, isEmpty);
+  });
+
+  test('drops a frame when its recovery snapshot becomes stale', () async {
+    var attempts = 0;
+    var recoveries = 0;
+    final writes = <String>[];
+    final queue = DesktopLyricMessageQueue(
+      (frame) async {
+        attempts += 1;
+        if (attempts == 1) throw StateError('pipe closed');
+        writes.add(frame);
+      },
+      onRecovery: () async {
+        recoveries += 1;
+        writes.add('state snapshot $recoveries');
+        return recoveries > 1;
+      },
+    );
+
+    await expectLater(
+      queue.enqueue(const msg.NowPlayingChangedMessage('旧歌', '旧作者', '旧专辑')),
+      throwsA(isA<StateError>()),
+    );
+    await queue.enqueue(
+      const msg.LyricLineChangedMessage('旧歌词', Duration(seconds: 1), null),
+    );
+    expect(writes, ['state snapshot 1']);
+
+    await queue.enqueue(
+      const msg.LyricLineChangedMessage('当前歌词', Duration(seconds: 1), null),
+    );
+    expect(writes, [
+      'state snapshot 1',
+      'state snapshot 2',
+      contains('当前歌词'),
     ]);
   });
 }
