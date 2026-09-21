@@ -58,6 +58,27 @@ class DesktopLyricService extends ChangeNotifier {
     final generation = _processGeneration;
     _messageQueue = DesktopLyricMessageQueue(
       (frame) => _writeFrame(generation, frame),
+      onRecovery: () => _writeCurrentPlaybackState(generation),
+    );
+  }
+
+  Future<void> _writeCurrentPlaybackState(int generation) async {
+    await _writeFrame(
+      generation,
+      '${msg.PlayerStateChangedMessage(
+        _playbackService.playerState == PlayerState.playing,
+      ).buildMessageJson()}\n',
+    );
+
+    final nowPlaying = _playbackService.nowPlaying;
+    if (nowPlaying == null) return;
+    await _writeFrame(
+      generation,
+      '${msg.NowPlayingChangedMessage(
+        nowPlaying.title,
+        nowPlaying.artist,
+        nowPlaying.album,
+      ).buildMessageJson()}\n',
     );
   }
 

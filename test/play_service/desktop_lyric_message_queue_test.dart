@@ -61,4 +61,32 @@ void main() {
     expect(writes, hasLength(1));
     expect(json.decode(writes.single)['message']['playing'], false);
   });
+
+  test('recovers with a state snapshot before the next frame', () async {
+    var attempts = 0;
+    final writes = <String>[];
+    final queue = DesktopLyricMessageQueue(
+      (frame) async {
+        attempts += 1;
+        if (attempts == 1) throw StateError('pipe closed');
+        writes.add(frame);
+      },
+      onRecovery: () async {
+        writes.add('state snapshot');
+      },
+    );
+
+    await expectLater(
+      queue.enqueue(const msg.NowPlayingChangedMessage('旧歌', '旧作者', '旧专辑')),
+      throwsA(isA<StateError>()),
+    );
+    await queue.enqueue(
+      const msg.LyricLineChangedMessage('新歌词', Duration(seconds: 1), null),
+    );
+
+    expect(writes, [
+      'state snapshot',
+      contains('LyricLineChangedMessage'),
+    ]);
+  });
 }
