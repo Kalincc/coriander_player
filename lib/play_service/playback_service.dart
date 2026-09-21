@@ -56,6 +56,14 @@ class PlaybackPlaylistContext {
   }
 }
 
+class PlaybackRequestGate {
+  int _generation = 0;
+
+  int begin() => ++_generation;
+
+  bool isCurrent(int generation) => generation == _generation;
+}
+
 class PlaybackService extends ChangeNotifier
     implements PlaybackPlaylistController {
   final PlayService playService;
@@ -103,6 +111,7 @@ class PlaybackService extends ChangeNotifier
   final _player = BassPlayer();
   final _smtc = SmtcFlutter();
   final _pref = AppPreference.instance.playbackPref;
+  final _playbackRequestGate = PlaybackRequestGate();
 
   late final _wasapiExclusive = ValueNotifier(_player.wasapiExclusive);
   ValueNotifier<bool> get wasapiExclusive => _wasapiExclusive;
@@ -193,6 +202,7 @@ class PlaybackService extends ChangeNotifier
     Duration initialPosition = Duration.zero,
   }) async {
     if (audioIndex < 0 || audioIndex >= playlist.length) return;
+    final requestGeneration = _playbackRequestGate.begin();
     final audio = playlist[audioIndex];
     try {
       _endHistorySession();
@@ -218,11 +228,13 @@ class PlaybackService extends ChangeNotifier
       );
 
       playService.desktopLyricService.canSendMessage.then((canSend) {
-        if (!canSend) return;
+        if (!_playbackRequestGate.isCurrent(requestGeneration) || !canSend) {
+          return;
+        }
 
         playService.desktopLyricService
             .sendPlayerStateMessage(playerState == PlayerState.playing);
-        playService.desktopLyricService.sendNowPlayingMessage(nowPlaying!);
+        playService.desktopLyricService.sendNowPlayingMessage(audio);
       });
     } catch (err) {
       LOGGER.e("[load and play] $err");

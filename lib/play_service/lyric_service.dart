@@ -72,6 +72,7 @@ class LyricService extends ChangeNotifier {
   /// 下一行歌词
   int _nextLyricLine = 0;
   int _currentLyricLine = -1;
+  int _lyricGeneration = 0;
   bool _disposed = false;
 
   late final StreamController<int> _lyricLineStreamController =
@@ -124,8 +125,9 @@ class LyricService extends ChangeNotifier {
 
     _currentLyricLine = index;
     _lyricLineStreamController.add(index);
+    final generation = _lyricGeneration;
     _delegate.canSendDesktopLyric.then((canSend) {
-      if (_disposed || !canSend) return;
+      if (_disposed || generation != _lyricGeneration || !canSend) return;
       _delegate.sendDesktopLyricLine(lyric.lines[index]);
     });
   }
@@ -149,6 +151,7 @@ class LyricService extends ChangeNotifier {
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return;
 
+    final generation = ++_lyricGeneration;
     currLyricFuture.ignore();
 
     final lyricSource = LYRIC_SOURCES[nowPlaying.path];
@@ -167,7 +170,10 @@ class LyricService extends ChangeNotifier {
       }
     }
 
-    currLyricFuture.then((_) => refreshCurrentLyric());
+    currLyricFuture.then((_) {
+      if (_disposed || generation != _lyricGeneration) return;
+      refreshCurrentLyric();
+    });
     notifyListeners();
   }
 
@@ -175,9 +181,13 @@ class LyricService extends ChangeNotifier {
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return;
 
+    final generation = ++_lyricGeneration;
     currLyricFuture.ignore();
     currLyricFuture = Lrc.fromAudioPath(nowPlaying);
-    currLyricFuture.then((_) => refreshCurrentLyric());
+    currLyricFuture.then((_) {
+      if (_disposed || generation != _lyricGeneration) return;
+      refreshCurrentLyric();
+    });
     notifyListeners();
   }
 
@@ -185,22 +195,31 @@ class LyricService extends ChangeNotifier {
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return;
 
+    final generation = ++_lyricGeneration;
     currLyricFuture.ignore();
     currLyricFuture = getMostMatchedLyric(nowPlaying);
-    currLyricFuture.then((_) => refreshCurrentLyric());
+    currLyricFuture.then((_) {
+      if (_disposed || generation != _lyricGeneration) return;
+      refreshCurrentLyric();
+    });
     notifyListeners();
   }
 
   void useSpecificLyric(Lyric lyric) {
+    final generation = ++_lyricGeneration;
     currLyricFuture.ignore();
     currLyricFuture = Future.value(lyric);
-    currLyricFuture.then((_) => refreshCurrentLyric());
+    currLyricFuture.then((_) {
+      if (_disposed || generation != _lyricGeneration) return;
+      refreshCurrentLyric();
+    });
     notifyListeners();
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _lyricGeneration += 1;
     _nowPlayingPagePreference.removeListener(_handlePreferenceChanged);
     _lyricLineStreamController.close();
     _positionStreamSubscription.cancel();
