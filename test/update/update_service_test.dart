@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:coriander_player/release_info.dart';
 import 'package:coriander_player/update/update_release.dart';
 import 'package:coriander_player/update/update_service.dart';
@@ -114,5 +118,61 @@ void main() {
     );
 
     expect(candidate?.version, ForkReleaseVersion.parse('1.5.1-kalin.11'));
+  });
+
+  test('github source requests the latest release endpoint', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    String? requestPath;
+    server.listen((request) async {
+      requestPath = request.uri.path;
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode({
+          'tag_name': 'v1.5.1-kalin.14',
+          'name': 'Coriander Player 1.5.1-kalin.14',
+          'body': 'notes',
+          'html_url':
+              'https://github.com/Kalincc/coriander_player/releases/tag/v1.5.1-kalin.14',
+          'draft': false,
+          'prerelease': false,
+          'assets': [
+            {
+              'name': 'Coriander.Player.1.5.1-kalin.14.Setup.exe',
+              'browser_download_url':
+                  'https://example.com/Coriander.Player.1.5.1-kalin.14.Setup.exe',
+            },
+            {
+              'name': 'SHA256SUMS.txt',
+              'browser_download_url': 'https://example.com/SHA256SUMS.txt',
+            },
+          ],
+        }));
+      await request.response.close();
+    });
+
+    final service = UpdateService.github(
+      GitHub(endpoint: 'http://127.0.0.1:${server.port}'),
+    );
+    final candidate = await service.check(
+      ForkReleaseVersion.parse('1.5.1-kalin.13'),
+    );
+
+    expect(requestPath, '/repos/Kalincc/coriander_player/releases/latest');
+    expect(candidate?.version, ForkReleaseVersion.parse('1.5.1-kalin.14'));
+  });
+
+  test('times out a stalled release source', () async {
+    final pending = Completer<Release>();
+    final service = UpdateService(
+      releases: () => Stream.fromFuture(pending.future),
+      timeout: const Duration(milliseconds: 20),
+    );
+
+    await expectLater(
+      service.check(ForkReleaseVersion.parse('1.5.1-kalin.13')),
+      throwsA(isA<TimeoutException>()),
+    );
   });
 }

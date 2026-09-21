@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:coriander_player/app_settings.dart';
@@ -171,6 +172,14 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
           '该版本缺少可验证的安装包，请打开发布页面手动下载。',
           canRetry: false,
           releasePageUri: error.releasePageUri,
+        ));
+      }
+    } on TimeoutException catch (error, stackTrace) {
+      if (_isCurrent(generation)) {
+        LOGGER.e(error, stackTrace: stackTrace);
+        _setState(const UpdateFailed(
+          '检查更新超时，请检查网络后重试。',
+          canRetry: true,
         ));
       }
     } catch (error, stackTrace) {

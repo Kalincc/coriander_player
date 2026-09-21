@@ -100,6 +100,32 @@ void main() {
     controller.dispose();
   });
 
+  test('reports a timeout instead of staying in checking state', () async {
+    final events = <String>[];
+    final service = _FakeService(
+      null,
+      events,
+      error: TimeoutException('release check stalled'),
+    );
+    final controller = _controllerWith(
+      service: service,
+      environment: _installedEnvironment(),
+      downloader: _FakeDownloader(events, _successfulDownload),
+      installer: _FakeInstaller(events, null),
+      shutdown: _FakeShutdown(events, null),
+    );
+
+    await controller.check();
+
+    final state = controller.state;
+    expect(state, isA<UpdateFailed>());
+    expect(
+      (state as UpdateFailed).message,
+      '检查更新超时，请检查网络后重试。',
+    );
+    controller.dispose();
+  });
+
   test('ignores a duplicate check while one is active', () async {
     final events = <String>[];
     final checking = Completer<void>();
@@ -294,17 +320,19 @@ Future<VerifiedUpdate> _successfulDownload(
 }
 
 class _FakeService extends UpdateService {
-  _FakeService(this.candidate, this.events, {this.gate})
+  _FakeService(this.candidate, this.events, {this.gate, this.error})
       : super(releases: () => const Stream<Never>.empty());
 
   final UpdateCandidate? candidate;
   final List<String> events;
   final Completer<void>? gate;
+  final Object? error;
 
   @override
   Future<UpdateCandidate?> check(_) async {
     events.add('check');
     await gate?.future;
+    if (error != null) throw error!;
     return candidate;
   }
 }
