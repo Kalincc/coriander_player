@@ -65,6 +65,10 @@ jobs:
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/installer_contract_test.ps1
 
+      - name: Test desktop lyric protocol patch
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/desktop_lyric_protocol_test.ps1
+
       - name: Build complete portable package
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_windows.ps1 -Tag $env:RELEASE_TAG

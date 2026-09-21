@@ -82,6 +82,9 @@ $desktopLyricSource = Join-Path $workRoot 'desktop_lyric-src'
 Invoke-Checked 'git' 'clone' '--no-checkout' 'https://github.com/Ferry-200/desktop_lyric.git' $desktopLyricSource
 Invoke-Checked 'git' '-C' $desktopLyricSource 'fetch' '--depth' '1' 'origin' 'fe84f66ba0b0e304b05c558483b37552c906cc06'
 Invoke-Checked 'git' '-C' $desktopLyricSource 'checkout' '--detach' 'FETCH_HEAD'
+Invoke-Checked 'powershell' '-NoProfile' '-ExecutionPolicy' 'Bypass' '-File' `
+    (Join-Path $repositoryRoot 'scripts\patch_desktop_lyric_protocol.ps1') `
+    '-Path' $desktopLyricSource
 
 Push-Location $desktopLyricSource
 try {

@@ -115,9 +115,10 @@ scoop install jin/coriander_player
 
 ## 编译
 1. 开发 flutter 需要的环境
-2. 需要编译 Coriander Player（本仓库） 软件本体和 desktop_lyric。[desktop_lyric](https://github.com/Ferry-200/desktop_lyric.git) 也是 Flutter 应用，直接编译即可
-3. 要把得到的 desktop_lyric 产物放在软件目录的 `desktop_lyric/` 目录下
-4. 编译后要把 BASS 库的 64 位的 `bass.dll`, `bassape.dll`, `bassdsd.dll`, `bassflac.dll`, `bassmidi.dll`, `bassopus.dll`, `basswv.dll`, `basswasapi.dll` 放在软件目录的 `BASS` 文件夹下
+2. 需要编译 Coriander Player（本仓库）软件本体和 [desktop_lyric](https://github.com/Ferry-200/desktop_lyric.git)。`desktop_lyric` 也是 Flutter 应用。
+3. 编译 `desktop_lyric` 前，先在本仓库根目录执行：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/patch_desktop_lyric_protocol.ps1 -Path <desktop_lyric源码目录>`。该步骤把进程通信改为按行解析，避免切歌时标题、歌手和专辑信息滞后；发布包会自动应用此补丁。
+4. 要把得到的 desktop_lyric 产物放在软件目录的 `desktop_lyric/` 目录下
+5. 编译后要把 BASS 库的 64 位的 `bass.dll`, `bassape.dll`, `bassdsd.dll`, `bassflac.dll`, `bassmidi.dll`, `bassopus.dll`, `basswv.dll`, `basswasapi.dll` 放在软件目录的 `BASS` 文件夹下
 
 ## 歌词特性解释
 1. lrc歌词的间奏识别   
