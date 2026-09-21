@@ -166,6 +166,6 @@ Run: `flutter analyze --no-fatal-infos lib test`; then run `scripts/tests/deskto
 
 Run: `git diff --check` and `git status --short --branch`. Restore only Flutter-generated Windows files if test tooling rewrites them.
 
-- [ ] **Step 5: Request code review**
+- [x] **Step 5: Request code review**
 
 Review the complete diff against the previous lyric-source-diagnostics commit and address every Important/Critical finding before reporting completion.
