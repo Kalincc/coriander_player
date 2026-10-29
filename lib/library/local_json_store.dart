@@ -10,22 +10,30 @@ class LocalJsonStore {
   final Directory directory;
   final MoveFile _moveFile;
 
-  Future<Object?> read(String fileName) async {
+  Future<Object?> read(String fileName) =>
+      readValidated<Object?>(fileName, (value) => value);
+
+  /// Tries the backup when either JSON decoding or schema validation fails.
+  Future<T?> readValidated<T>(
+    String fileName,
+    T Function(Object? value) parse,
+  ) async {
     final primary = File(_pathFor(fileName));
     final backup = File('${primary.path}.bak');
 
     if (!await primary.exists()) {
       if (await backup.exists()) {
-        return _readBackupAndRestorePrimary(primary, backup);
+        return _readBackupAndRestorePrimary(primary, backup, parse);
       }
       return null;
     }
 
     try {
-      return await _decode(primary);
-    } on FormatException {
-      if (await backup.exists()) {
-        return _readBackupAndRestorePrimary(primary, backup);
+      return parse(await _decode(primary));
+    } catch (error) {
+      if ((error is FormatException || error is FileSystemException) &&
+          await backup.exists()) {
+        return _readBackupAndRestorePrimary(primary, backup, parse);
       }
       rethrow;
     }
@@ -43,10 +51,10 @@ class LocalJsonStore {
     await temporary.writeAsString(json.encode(value), flush: true);
 
     try {
-      if (await backup.exists()) {
-        await backup.delete();
-      }
       if (await target.exists()) {
+        if (await backup.exists()) {
+          await backup.delete();
+        }
         await _moveFile(target, backup);
       }
       await _moveFile(temporary, target);
@@ -67,11 +75,12 @@ class LocalJsonStore {
   Future<Object?> _decode(File file) async =>
       json.decode(await file.readAsString());
 
-  Future<Object?> _readBackupAndRestorePrimary(
+  Future<T> _readBackupAndRestorePrimary<T>(
     File primary,
     File backup,
+    T Function(Object? value) parse,
   ) async {
-    final value = await _decode(backup);
+    final value = parse(await _decode(backup));
     final recovery = File('${primary.path}.recovery.tmp');
     if (await recovery.exists()) {
       await recovery.delete();

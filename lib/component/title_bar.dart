@@ -1,10 +1,8 @@
 // ignore_for_file: camel_case_types
 
 import 'package:coriander_player/app_settings.dart';
-import 'package:coriander_player/application_shutdown.dart';
 import 'package:coriander_player/component/horizontal_lyric_view.dart';
 import 'package:coriander_player/component/responsive_builder.dart';
-import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -330,14 +328,7 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
         ),
         IconButton(
           tooltip: "退出",
-          onPressed: () async {
-            try {
-              await ApplicationShutdown.production().exitNormally();
-            } catch (error, stackTrace) {
-              LOGGER.e(error, stackTrace: stackTrace);
-              showTextOnSnackBar('保存数据失败，播放器未退出。');
-            }
-          },
+          onPressed: windowManager.close,
           icon: const Icon(Symbols.close),
         ),
       ],

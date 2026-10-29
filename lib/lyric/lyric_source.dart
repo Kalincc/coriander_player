@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:coriander_player/app_settings.dart';
+import 'package:coriander_player/library/audio_path_key.dart';
 import 'package:coriander_player/utils.dart';
 
 enum LyricSourceType {
@@ -51,6 +52,20 @@ class LyricSource {
 }
 
 Map<String, LyricSource> LYRIC_SOURCES = {};
+
+LyricSource? lyricSourceForPath(String path) {
+  final key = audioPathKey(path);
+  for (final entry in LYRIC_SOURCES.entries) {
+    if (audioPathKey(entry.key) == key) return entry.value;
+  }
+  return null;
+}
+
+void setLyricSourceForPath(String path, LyricSource source) {
+  final key = audioPathKey(path);
+  LYRIC_SOURCES.removeWhere((saved, _) => audioPathKey(saved) == key);
+  LYRIC_SOURCES[path] = source;
+}
 
 Future<void> readLyricSources() async {
   try {

@@ -1,4 +1,5 @@
 import 'package:coriander_player/app_settings.dart';
+import 'package:coriander_player/application_shutdown.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/local_json_store.dart';
 import 'package:coriander_player/library/playlist.dart';
@@ -54,6 +55,10 @@ class PlayService {
   Future<void> loadPlaybackHistory() async {
     final historyService = await _playbackHistoryService;
     await historyService.load();
+    await historyService.reconcileLibrary(
+      AudioLibrary.instance.audioCollection,
+      removeMissing: false,
+    );
     _loadedPlaybackHistoryService = historyService;
     playbackService.attachHistory(historyService);
   }
@@ -62,6 +67,7 @@ class PlayService {
     await PlaybackDataInitializer(
       loadHistory: loadPlaybackHistory,
     ).initialize(library);
+    ApplicationShutdown.production().markUserStateLoaded();
   }
 
   Future<void> reconcilePlaybackData(Iterable<Audio> library) async {

@@ -168,7 +168,7 @@ class LyricService extends ChangeNotifier {
     final generation = ++_lyricGeneration;
     currLyricFuture.ignore();
 
-    final lyricSource = LYRIC_SOURCES[nowPlaying.path];
+    final lyricSource = lyricSourceForPath(nowPlaying.path);
     if (lyricSource == null) {
       currLyricFuture = _getLyricDefault(AppSettings.instance.localLyricFirst);
     } else {

@@ -64,6 +64,85 @@ void main() {
     });
   });
 
+  List<String> parseItems(Object? value) {
+    if (value is! Map || value['items'] is! List) {
+      throw const FormatException('Invalid saved items');
+    }
+    final items = value['items'] as List;
+    if (items.any((item) => item is! String)) {
+      throw const FormatException('Invalid saved item');
+    }
+    return items.cast<String>();
+  }
+
+  test('validates both copies before restoring a schema-valid backup',
+      () async {
+    final store = LocalJsonStore(directory);
+    final primary = File('${directory.path}/saved.json');
+    final backup = File('${primary.path}.bak');
+    const validBackup = '{"items":["backup"]}';
+    await primary.writeAsString('{"items":[false]}');
+    await backup.writeAsString(validBackup);
+
+    expect(await store.readValidated('saved.json', parseItems), ['backup']);
+    expect(await primary.readAsString(), validBackup);
+    expect(await backup.readAsString(), validBackup);
+  });
+
+  test('keeps both originals when neither copy passes schema validation',
+      () async {
+    final store = LocalJsonStore(directory);
+    final primary = File('${directory.path}/saved.json');
+    final backup = File('${primary.path}.bak');
+    const badPrimary = '{"items":[false]}';
+    const badBackup = '{"items":"broken"}';
+    await primary.writeAsString(badPrimary);
+    await backup.writeAsString(badBackup);
+
+    await expectLater(
+      store.readValidated('saved.json', parseItems),
+      throwsFormatException,
+    );
+
+    expect(await primary.readAsString(), badPrimary);
+    expect(await backup.readAsString(), badBackup);
+    expect(File('${primary.path}.recovery.tmp').existsSync(), isFalse);
+  });
+
+  test('does not replace a valid primary with an invalid backup', () async {
+    final store = LocalJsonStore(directory);
+    final primary = File('${directory.path}/saved.json');
+    final backup = File('${primary.path}.bak');
+    await primary.writeAsString('{"items":["primary"]}');
+    await backup.writeAsString('{"items":"broken"}');
+
+    expect(await store.readValidated('saved.json', parseItems), ['primary']);
+    expect(await backup.readAsString(), '{"items":"broken"}');
+  });
+
+  test('keeps the only backup if a missing-primary replacement fails',
+      () async {
+    final primary = File('${directory.path}/saved.json');
+    final backup = File('${primary.path}.bak');
+    const validBackup = '{"items":["backup"]}';
+    await backup.writeAsString(validBackup);
+    final store =
+        LocalJsonStore(directory, moveFile: (source, destination) async {
+      throw const FileSystemException('simulated replace failure');
+    });
+
+    await expectLater(
+      store.writeAtomically('saved.json', {
+        'items': ['new']
+      }),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    expect(await primary.readAsString(), validBackup);
+    expect(await backup.readAsString(), validBackup);
+    expect(File('${primary.path}.tmp').existsSync(), isFalse);
+  });
+
   test('keeps recovered data in the backup after a later write failure',
       () async {
     final primary =

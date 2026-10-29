@@ -228,8 +228,10 @@ class _SetLyricSourceDialog extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8.0),
                 ),
                 onTap: () {
-                  LYRIC_SOURCES[audio.path] =
-                      LyricSource(LyricSourceType.local);
+                  setLyricSourceForPath(
+                    audio.path,
+                    LyricSource(LyricSourceType.local),
+                  );
                   PlayService.instance.lyricService.useLocalLyric();
                   Navigator.pop(context);
                 },
@@ -416,12 +418,14 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
           ResultSource.kugou => LyricSourceType.kugou,
           ResultSource.netease => LyricSourceType.netease,
         };
-        LYRIC_SOURCES[audio.path] = LyricSource(
-          source,
-          qqSongId: searchResult.qqSongId,
-          kugouSongHash: searchResult.kugouSongHash,
-          neteaseSongId: searchResult.neteaseSongId,
-        );
+        setLyricSourceForPath(
+            audio.path,
+            LyricSource(
+              source,
+              qqSongId: searchResult.qqSongId,
+              kugouSongHash: searchResult.kugouSongHash,
+              neteaseSongId: searchResult.neteaseSongId,
+            ));
         PlayService.instance.lyricService.useSpecificLyric(lyric);
 
         Navigator.pop(context);

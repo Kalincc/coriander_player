@@ -435,6 +435,15 @@ class PlaybackService extends ChangeNotifier
     playService.lyricService.findCurrLyricLine();
   }
 
+  /// Stop progress changes and await the history write before the window exits.
+  Future<void> prepareForShutdown() async {
+    if (_player.playerState == PlayerState.playing) _player.pause();
+    _playbackHistoryService?.recordPosition(
+      Duration(milliseconds: (_player.position * 1000).round()),
+    );
+    await _playbackHistoryService?.endSession(flush: true);
+  }
+
   void close() {
     _playbackHistoryService?.recordPosition(
       Duration(milliseconds: (_player.position * 1000).round()),

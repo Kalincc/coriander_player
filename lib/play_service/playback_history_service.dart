@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/audio_path_key.dart';
 import 'package:coriander_player/library/local_json_store.dart';
 import 'package:coriander_player/library/playback_history_models.dart';
 import 'package:flutter/foundation.dart';
@@ -18,6 +19,7 @@ class PlaybackHistoryService extends ChangeNotifier {
   final List<PlaybackHistoryEvent> _events = [];
   _PlaybackSession? _session;
   Future<void> _persistChain = Future.value();
+  bool _loadFailed = false;
 
   List<PlaybackHistoryEvent> get events =>
       UnmodifiableListView<PlaybackHistoryEvent>(_events);
@@ -32,14 +34,24 @@ class PlaybackHistoryService extends ChangeNotifier {
     List<PlaybackHistoryEvent> loaded = [];
     try {
       final raw = await store.read(_historyFileName);
-      if (raw is Map && raw['events'] is List) {
-        loaded = (raw['events'] as List)
-            .whereType<Map>()
-            .map(PlaybackHistoryEvent.fromMap)
-            .toList();
+      if (raw != null) {
+        if (raw is! Map || raw['events'] is! List) {
+          throw const FormatException('Invalid playback history');
+        }
+        loaded = (raw['events'] as List).map((item) {
+          try {
+            if (item is Map) return PlaybackHistoryEvent.fromMap(item);
+          } catch (_) {
+            throw const FormatException('Invalid playback history event');
+          }
+          throw const FormatException('Invalid playback history event');
+        }).toList();
       }
+      _loadFailed = false;
     } catch (error) {
+      _loadFailed = true;
       debugPrint('[playback history] failed to load: $error');
+      rethrow;
     }
 
     final retained = _retainRecent(loaded);
@@ -53,15 +65,33 @@ class PlaybackHistoryService extends ChangeNotifier {
     }
   }
 
-  Future<void> reconcileLibrary(Iterable<Audio> library) async {
-    final availablePaths = library.map((audio) => audio.path).toSet();
+  Future<void> reconcileLibrary(Iterable<Audio> library,
+      {bool removeMissing = true}) async {
+    final available = {
+      for (final audio in library) audioPathKey(audio.path): audio
+    };
     final retained = _retainRecent(
-      _events.where((event) => availablePaths.contains(event.path)),
+      _events
+          .where((event) =>
+              !removeMissing || available.containsKey(audioPathKey(event.path)))
+          .map((event) {
+        final current = available[audioPathKey(event.path)];
+        if (current == null || event.path == current.path) return event;
+        return PlaybackHistoryEvent(
+          path: current.path,
+          startedAt: event.startedAt,
+          listened: event.listened,
+          qualified: event.qualified,
+        );
+      }),
     );
     final eventsChanged = !_sameEvents(_events, retained);
     final session = _session;
+    final currentAudio =
+        session == null ? null : available[audioPathKey(session.audio.path)];
     final sessionChanged =
-        session != null && !availablePaths.contains(session.audio.path);
+        removeMissing && session != null && currentAudio == null;
+    if (session != null && currentAudio != null) session.audio = currentAudio;
     if (!eventsChanged && !sessionChanged) return;
 
     if (eventsChanged) {
@@ -106,10 +136,13 @@ class PlaybackHistoryService extends ChangeNotifier {
     session.positionBaseline = position;
   }
 
-  Future<void> endSession() async {
+  Future<void> endSession({bool flush = false}) async {
     final session = _session;
     _session = null;
-    if (session == null || !_qualifies(session)) return;
+    if (session == null || !_qualifies(session)) {
+      if (flush) await _persist();
+      return;
+    }
 
     _events.add(
       PlaybackHistoryEvent(
@@ -157,6 +190,9 @@ class PlaybackHistoryService extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
+    if (_loadFailed) {
+      throw StateError('History must be loaded successfully before saving');
+    }
     final snapshot = {
       'version': _historyVersion,
       'events': _events.map((event) => event.toMap()).toList(),
@@ -167,7 +203,7 @@ class PlaybackHistoryService extends ChangeNotifier {
     _persistChain = nextWrite.catchError((error) {
       debugPrint('[playback history] failed to save: $error');
     });
-    await _persistChain;
+    await nextWrite;
   }
 }
 
@@ -175,7 +211,7 @@ class _PlaybackSession {
   _PlaybackSession(this.audio, this.startedAt, this.initialPosition)
       : positionBaseline = initialPosition;
 
-  final Audio audio;
+  Audio audio;
   final DateTime startedAt;
   final Duration initialPosition;
   Duration positionBaseline;

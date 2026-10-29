@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/app_settings.dart';
+import 'package:coriander_player/application_shutdown.dart';
 import 'package:coriander_player/entry.dart';
 import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/src/rust/api/logger.dart';
@@ -14,6 +15,7 @@ import 'package:window_manager/window_manager.dart';
 
 Future<void> initWindow() async {
   await windowManager.ensureInitialized();
+  await ApplicationShutdown.production().listenForWindowClose();
   WindowOptions windowOptions = WindowOptions(
     minimumSize: const Size(507, 507),
     size: AppSettings.instance.windowSize,

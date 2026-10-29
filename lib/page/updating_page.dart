@@ -95,7 +95,13 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
                 '${widget.indexPath.path}${Platform.pathSeparator}index.json',
               ),
             ),
-            loadPlaylists: readPlaylists,
+            loadPlaylists: () async {
+              await readPlaylists();
+              await reconcilePlaylistAudios(
+                AudioLibrary.instance.audioCollection,
+                removeMissing: false,
+              );
+            },
             loadLyricSources: readLyricSources,
             loadLyricIndex: LyricSearchIndex.instance.load,
             loadPlaybackHistory: () => PlayService.instance
