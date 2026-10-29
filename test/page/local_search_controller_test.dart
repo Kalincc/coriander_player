@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
@@ -7,10 +8,67 @@ import 'package:coriander_player/page/search_page/local_search_controller.dart';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
 import 'package:coriander_player/src/rust/frb_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 
 void main() {
   setUpAll(() {
     RustLib.initMock(api: _TestRustLibApi());
+  });
+
+  test('large matching searches publish bounded snapshots, not every 25 songs',
+      () async {
+    final songs = List.generate(
+        10000,
+        (index) => Audio('Needle $index', 'Artist', 'Album', 1, 180, 320, 44100,
+            '$index.flac', 1, 1, 'test'));
+    final library = AudioLibrary.forTesting(songs);
+    final controller = LocalSearchController(
+      lyricIndex: _emptyLyricIndex(),
+      libraryProvider: () => library,
+      yieldToEventLoop: () async {},
+    );
+    addTearDown(controller.dispose);
+    var updates = 0;
+    var copiedItems = 0;
+    controller.addListener(() {
+      updates++;
+      copiedItems += controller.value.result.audios.length;
+    });
+    await controller.search('needle');
+    expect(controller.value.result.audios, hasLength(10000));
+    expect(updates, lessThan(100));
+    expect(copiedItems, lessThan(500000));
+    debugPrint(
+        'PERF 10000 matches: updates=$updates, snapshot-items=$copiedItems');
+  });
+
+  test('artist scanning yields in bounded chunks and supports cancellation',
+      () async {
+    var reads = 0;
+    final library = AudioLibrary.forTesting([]);
+    for (var i = 0; i < 1000; i++) {
+      library.artistCollection['$i'] =
+          _CountingArtist('Needle $i', () => reads++);
+    }
+    final gate = Completer<void>();
+    var yields = 0;
+    final controller = LocalSearchController(
+      lyricIndex: _emptyLyricIndex(),
+      libraryProvider: () => library,
+      yieldToEventLoop: () =>
+          ++yields == 2 ? gate.future : Future<void>.value(),
+    );
+    addTearDown(controller.dispose);
+    final old = controller.search('needle');
+    await Future<void>.delayed(Duration.zero);
+    expect(reads, 25);
+    final latest = controller.search('');
+    gate.complete();
+    await Future.wait([old, latest]);
+    expect(reads, 25);
+    expect(controller.value.result.artists, isEmpty);
+    expect(controller.value.result.query, '');
+    expect(controller.value.isComplete, isTrue);
   });
 
   test('reads the replaced AudioLibrary singleton on every search', () async {
@@ -96,5 +154,15 @@ class _TestRustLibApi implements RustLibApi {
       );
     }
     throw UnimplementedError(invocation.memberName.toString());
+  }
+}
+
+class _CountingArtist extends Artist {
+  _CountingArtist(String name, this.onRead) : super(name: name);
+  final VoidCallback onRead;
+  @override
+  String get name {
+    onRead();
+    return super.name;
   }
 }

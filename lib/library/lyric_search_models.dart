@@ -8,6 +8,8 @@ class LyricSearchLine {
   final String text;
   final String? translation;
   final List<String>? _persistedSearchForms;
+  // Weak keys let old index lines be collected after a library rescan.
+  static final _generatedSearchForms = Expando<List<String>>();
 
   const LyricSearchLine({
     required this.startMs,
@@ -20,10 +22,10 @@ class LyricSearchLine {
 
   List<String> get searchForms =>
       _persistedSearchForms ??
-      {
+      (_generatedSearchForms[this] ??= List.unmodifiable({
         ...lyricSearchFormsFor(text),
         if (translation != null) ...lyricSearchFormsFor(translation!),
-      }.toList(growable: false);
+      }));
 
   Map<String, Object> toJson() => {
         'startMs': startMs,

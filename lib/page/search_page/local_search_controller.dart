@@ -31,6 +31,8 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
   final Future<void> Function() _yieldToEventLoop;
 
   int _generation = 0;
+  final _publicationClock = Stopwatch()..start();
+  int _lastPublishedMicros = 0;
 
   LocalSearchController({
     required this.lyricIndex,
@@ -76,29 +78,37 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
     final audios = List<Audio>.of(library.audioCollection);
 
     try {
-      if (!await _searchAudioBatches(
+      if (!await _searchMetadataBatches<Audio>(
         generation: generation,
         result: result,
-        audios: audios,
-        query: queryInLowerCase,
+        items: audios,
+        matches: (audio) =>
+            audio.title.toLowerCase().contains(queryInLowerCase),
+        found: result.audios,
       )) {
         return;
       }
 
-      result.artists.addAll(
-        library.artistCollection.values.where(
-          (artist) =>
-              artist.name.toLowerCase().contains(artistQueryInLowerCase),
-        ),
-      );
-      if (!await _publishBatch(generation, result)) return;
+      if (!await _searchMetadataBatches<Artist>(
+        generation: generation,
+        result: result,
+        items: library.artistCollection.values.toList(growable: false),
+        matches: (artist) =>
+            artist.name.toLowerCase().contains(artistQueryInLowerCase),
+        found: result.artists,
+      )) {
+        return;
+      }
 
-      result.album.addAll(
-        library.albumCollection.values.where(
-          (album) => album.name.toLowerCase().contains(queryInLowerCase),
-        ),
-      );
-      if (!await _publishBatch(generation, result)) return;
+      if (!await _searchMetadataBatches<Album>(
+        generation: generation,
+        result: result,
+        items: library.albumCollection.values.toList(growable: false),
+        matches: (album) => album.name.toLowerCase().contains(queryInLowerCase),
+        found: result.album,
+      )) {
+        return;
+      }
 
       if (!await _searchLyricBatches(
         generation: generation,
@@ -130,10 +140,18 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
 
   Future<bool> _publishBatch(
     int generation,
-    UnionSearchResult result,
-  ) async {
+    UnionSearchResult result, {
+    bool force = false,
+  }) async {
     await _yieldToEventLoop();
     if (!_isCurrent(generation)) return false;
+    // Keep yielding every batch, but only copy cumulative results once per frame
+    // (plus category boundaries). Otherwise a broad query copies O(n²) items.
+    // ponytail: snapshots still copy hits; use persistent chunks only if profiling
+    // shows copying remains a bottleneck after limiting publication frequency.
+    final now = _publicationClock.elapsedMicroseconds;
+    if (!force && now - _lastPublishedMicros < 16000) return true;
+    _lastPublishedMicros = now;
     value = LocalSearchState(
       result: UnionSearchResult.copyOf(result),
       isLoading: true,
@@ -142,21 +160,22 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
     return true;
   }
 
-  Future<bool> _searchAudioBatches({
+  Future<bool> _searchMetadataBatches<T>({
     required int generation,
     required UnionSearchResult result,
-    required List<Audio> audios,
-    required String query,
+    required List<T> items,
+    required bool Function(T) matches,
+    required List<T> found,
   }) async {
-    for (var start = 0; start < audios.length; start += _searchBatchSize) {
+    if (items.isEmpty) return _publishBatch(generation, result, force: true);
+    for (var start = 0; start < items.length; start += _searchBatchSize) {
       if (!_isCurrent(generation)) return false;
-      final end = (start + _searchBatchSize).clamp(0, audios.length);
-      result.audios.addAll(
-        audios
-            .getRange(start, end)
-            .where((audio) => audio.title.toLowerCase().contains(query)),
-      );
-      if (!await _publishBatch(generation, result)) return false;
+      final end = (start + _searchBatchSize).clamp(0, items.length);
+      found.addAll(items.getRange(start, end).where(matches));
+      if (!await _publishBatch(generation, result,
+          force: start == 0 || end == items.length)) {
+        return false;
+      }
     }
     return true;
   }
@@ -167,6 +186,9 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
     required List<Audio> audios,
     required CompiledLyricQuery query,
   }) async {
+    if (lyricIndex.entries.isEmpty) {
+      return _publishBatch(generation, result, force: true);
+    }
     for (var start = 0; start < audios.length; start += _searchBatchSize) {
       if (!_isCurrent(generation)) return false;
       final end = (start + _searchBatchSize).clamp(0, audios.length);
@@ -178,7 +200,10 @@ class LocalSearchController extends ValueNotifier<LocalSearchState> {
         );
         if (match != null) result.lyrics.add(match);
       }
-      if (!await _publishBatch(generation, result)) return false;
+      if (!await _publishBatch(generation, result,
+          force: start == 0 || end == audios.length)) {
+        return false;
+      }
     }
     return true;
   }

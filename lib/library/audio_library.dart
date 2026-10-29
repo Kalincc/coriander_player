@@ -4,8 +4,15 @@ import 'dart:ui';
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/artist_name_normalizer.dart';
 import 'package:coriander_player/library/audio_path_key.dart';
+import 'package:coriander_player/library/artwork_cache.dart';
 import 'package:coriander_player/src/rust/api/tag_reader.dart';
 import 'package:flutter/widgets.dart';
+
+final _artworkCache = ArtworkCache(load: (path, width, height) async {
+  final picture =
+      await getPictureFromPath(path: path, width: width, height: height);
+  return picture == null ? null : MemoryImage(picture);
+});
 
 /// Library consumers opt in to rebuilds without recreating the router or routes.
 class AudioLibraryScope extends InheritedNotifier<ValueNotifier<int>> {
@@ -165,6 +172,7 @@ class AudioLibrary {
       folders,
       scanRoots: scanRoots,
     ).._buildCollections();
+    _artworkCache.clear();
     _instance = loaded;
     revision.value++;
   }
@@ -241,7 +249,10 @@ class AudioLibrary {
 
   void rebuildCollections() {
     _buildCollections();
-    if (identical(this, _instance)) revision.value++;
+    if (identical(this, _instance)) {
+      _artworkCache.clear();
+      revision.value++;
+    }
   }
 
   @override
@@ -345,8 +356,6 @@ class Audio {
   /// 标签来源（Lofty、Windows、null）
   String? by;
 
-  ImageProvider? _cover;
-
   /// 以“、”和“/”分割艺术家，会把名称中带有这些符号的艺术家分割。
   /// 暂时想不到别的方法。
   Audio(
@@ -406,41 +415,24 @@ class Audio {
   Future<ImageProvider?> _getResizedPic({
     required int width,
     required int height,
-  }) async {
+  }) {
     final ratio = PlatformDispatcher.instance.views.first.devicePixelRatio;
-    return getPictureFromPath(
+    return _artworkCache.get(
       path: path,
+      modified: modified,
+      created: created,
       width: (width * ratio).round(),
       height: (height * ratio).round(),
-    ).then((pic) {
-      if (pic == null) return null;
-
-      return MemoryImage(pic);
-    });
+    );
   }
 
-  /// 缓存ImageProvider而不是Uint8List（bytes）
-  /// 缓存bytes时，每次加载图片都要重新解码，内存占用很大。快速滚动时能到700mb
-  /// 缓存ImageProvider不用重新解码。快速滚动时最多250mb
-  /// 48*48
-  Future<ImageProvider?> get cover {
-    if (_cover == null) {
-      return _getResizedPic(width: 48, height: 48).then((value) {
-        if (value == null) return null;
+  /// 共享最近 256 个尺寸/文件版本的 Future，避免每首歌永久持有封面。
+  Future<ImageProvider?> get cover => _getResizedPic(width: 48, height: 48);
 
-        _cover = value;
-        return _cover;
-      });
-    }
-    return Future.value(_cover);
-  }
-
-  /// audio detail page 不需要频繁调用，所以不缓存图片
   /// 200 * 200
   Future<ImageProvider?> get mediumCover =>
       _getResizedPic(width: 200, height: 200);
 
-  /// now playing 不需要频繁调用，所以不缓存图片
   /// size: 400 * devicePixelRatio（屏幕缩放大小）
   Future<ImageProvider?> get largeCover =>
       _getResizedPic(width: 400, height: 400);

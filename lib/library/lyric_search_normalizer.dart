@@ -1,5 +1,7 @@
 import 'package:pinyin/pinyin.dart';
 
+final _whitespace = RegExp(r'\s+');
+
 class CompiledLyricQuery {
   final List<String> forms;
 
@@ -51,6 +53,6 @@ List<String> _searchFormsFor(String text) {
 }
 
 String _normalize(String text) => text.trim().toLowerCase().replaceAll(
-      RegExp(r'\s+'),
+      _whitespace,
       ' ',
     );

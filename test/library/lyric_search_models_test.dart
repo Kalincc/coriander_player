@@ -62,6 +62,16 @@ void main() {
     expect(line.searchForms, ['我愛你', '我爱你', 'wo ai ni', 'woaini']);
   });
 
+  test('generated pinyin forms are computed once and remain immutable', () {
+    const line =
+        LyricSearchLine(startMs: 1, text: '我愛你', translation: 'I love you');
+    final forms = line.searchForms;
+    expect(line.searchForms, same(forms));
+    expect(forms, containsAll(['wo ai ni', 'woaini', 'i love you']));
+    expect(() => forms.add('mutated'), throwsUnsupportedError);
+    expect(LyricSearchLine.fromJson(line.toJson()), line);
+  });
+
   test('entry JSON round-trips without song metadata', () {
     final entry = LyricIndexEntry(
       audioPath: r'C:\music\song.flac',
