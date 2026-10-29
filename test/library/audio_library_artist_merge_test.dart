@@ -39,8 +39,7 @@ void main() {
     expect(artist, same(library.artistForName('张学友')));
     expect(artist!.name, '张学友');
     expect(artist.works, hasLength(2));
-    expect(
-        library.albumCollection['Traditional Album']!.artistsMap.keys, ['张学友']);
+    expect(library.albumCollection.values.first.artistsMap.keys, ['张学友']);
   });
 
   test('keeps non-Chinese artist names distinct', () {
@@ -65,7 +64,7 @@ void main() {
     expect(library.artistCollection.keys, ['张学友']);
     expect(library.artistCollection['张学友']!.works, [same(audio)]);
     expect(
-      library.albumCollection['Collision Album']!.artistsMap.keys,
+      library.albumCollection.values.single.artistsMap.keys,
       ['张学友'],
     );
     expect(
@@ -85,7 +84,7 @@ void main() {
     expect(library.audioCollection, hasLength(2));
     expect(library.artistCollection['张学友']!.works, hasLength(2));
     expect(library.artistCollection['张学友']!.albumsMap, hasLength(1));
-    expect(library.albumCollection['Album']!.artistsMap, hasLength(1));
+    expect(library.albumCollection.values.single.artistsMap, hasLength(1));
   });
 }
 

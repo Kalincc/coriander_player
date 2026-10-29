@@ -57,6 +57,9 @@ struct Audio {
     title: String,
     artist: String,
     album: String,
+    album_artist: Option<String>,
+    disc: Option<u32>,
+    disc_total: Option<u32>,
     track: Option<u32>,
     /// in secs
     duration: u64,
@@ -80,6 +83,9 @@ impl Audio {
             title: path.file_name()?.to_string_lossy().to_string(),
             artist: "UNKNOWN".to_string(),
             album: "UNKNOWN".to_string(),
+            album_artist: None,
+            disc: None,
+            disc_total: None,
             track: None,
             duration: 0,
             bitrate: None,
@@ -96,6 +102,9 @@ impl Audio {
             "title": self.title,
             "artist": self.artist,
             "album": self.album,
+            "album_artist": self.album_artist,
+            "disc": self.disc,
+            "disc_total": self.disc_total,
             "track": self.track,
             "duration": self.duration,
             "bitrate": self.bitrate,
@@ -182,6 +191,7 @@ impl Audio {
             } else {
                 artist_strs.join("/")
             };
+            let (album_artist, disc, disc_total) = album_metadata(tag);
 
             return Some(Audio {
                 title: tag
@@ -194,6 +204,9 @@ impl Audio {
                     .unwrap_or(std::borrow::Cow::Borrowed("UNKNOWN"))
                     .to_string(),
                 track: tag.track(),
+                album_artist,
+                disc,
+                disc_total,
                 duration: properties.duration().as_secs(),
                 bitrate: properties.audio_bitrate(),
                 sample_rate: properties.sample_rate(),
@@ -208,6 +221,9 @@ impl Audio {
             title: path.file_name()?.to_string_lossy().to_string(),
             artist: std::borrow::Cow::Borrowed("UNKNOWN").to_string(),
             album: std::borrow::Cow::Borrowed("UNKNOWN").to_string(),
+            album_artist: None,
+            disc: None,
+            disc_total: None,
             track: None,
             duration: properties.duration().as_secs(),
             bitrate: properties.audio_bitrate(),
@@ -262,6 +278,15 @@ impl Audio {
             title,
             artist,
             album,
+            album_artist: music_properties
+                .AlbumArtist()
+                .ok()
+                .map(|value| value.to_string())
+                .filter(|value| !value.trim().is_empty()),
+            // MusicProperties has no disc accessor. Leave it unknown rather than
+            // inferring a disc from repeated track numbers or a file name.
+            disc: None,
+            disc_total: None,
             track: Some(music_properties.TrackNumber()?),
             duration: duration.as_secs(),
             bitrate: Some(music_properties.Bitrate()? / 1000),
@@ -272,6 +297,19 @@ impl Audio {
             by: Some("Windows".to_string()),
         })
     }
+}
+
+fn album_metadata(tag: &lofty::tag::Tag) -> (Option<String>, Option<u32>, Option<u32>) {
+    let artists = tag
+        .get_strings(&ItemKey::AlbumArtist)
+        .filter(|value| !value.trim().is_empty())
+        .collect::<Vec<_>>();
+    let album_artist = if artists.is_empty() {
+        None
+    } else {
+        Some(artists.join("/"))
+    };
+    (album_artist, tag.disk(), tag.disk_total())
 }
 
 #[derive(Debug)]
@@ -1046,6 +1084,25 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn album_tags_and_disc_numbers_survive_index_serialization() {
+        use lofty::tag::{Tag, TagType};
+        let mut tag = Tag::new(TagType::VorbisComments);
+        tag.insert_text(ItemKey::AlbumArtist, "群星".to_string());
+        tag.set_disk(2);
+        tag.set_disk_total(3);
+        let mut audio = Audio::new_with_path("compilation.flac", None).unwrap();
+        (audio.album_artist, audio.disc, audio.disc_total) = album_metadata(&tag);
+        let encoded = audio.to_json_value();
+        assert_eq!(encoded["album_artist"], "群星");
+        assert_eq!(encoded["disc"], 2);
+        assert_eq!(encoded["disc_total"], 3);
+        assert_eq!(
+            album_metadata(&Tag::new(TagType::VorbisComments)),
+            (None, None, None)
+        );
+    }
 
     #[test]
     fn lyric_alias_prefers_the_first_timed_value() {

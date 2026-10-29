@@ -17,6 +17,10 @@ class AlbumDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final album = AudioLibrary.watch(context).refreshedAlbum(this.album);
+    if (album == null || album.works.isEmpty) {
+      return const Center(child: Text('该专辑已不在音乐库中'));
+    }
     final secondaryContent = List<Audio>.from(album.works);
     final multiSelectController = MultiSelectController<Audio>();
 
@@ -27,11 +31,11 @@ class AlbumDetailPage extends StatelessWidget {
       backgroundPic: album.works.first.cover,
       picShape: PicShape.rrect,
       title: album.name,
-      subtitle: "${album.works.length} 首作品",
+      subtitle: "${album.albumArtist} · ${album.works.length} 首作品",
       secondaryContent: secondaryContent,
       secondaryContentBuilder: (context, audio, i, multiSelectController) =>
           AudioTile(
-        leading: Text(audio.track < 10 ? "0${audio.track}" : "${audio.track}"),
+        leading: Text(audio.trackLabel(includeDisc: album.hasMultipleDiscs)),
         audioIndex: i,
         playlist: secondaryContent,
         multiSelectController: multiSelectController,
@@ -88,14 +92,14 @@ class AlbumDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.art_track,
-          name: "音轨",
+          name: "音轨（碟号优先）",
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
-                list.sort((a, b) => a.track.compareTo(b.track));
+                list.sort(compareAlbumTracks);
                 break;
               case SortOrder.decending:
-                list.sort((a, b) => b.track.compareTo(a.track));
+                list.sort((a, b) => compareAlbumTracks(b, a));
                 break;
             }
           },

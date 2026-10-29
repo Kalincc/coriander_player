@@ -54,6 +54,12 @@ class PlaybackPlaylistContext {
     _items = List<Audio>.from(playlist);
     _currentIndex = audioIndex;
   }
+
+  void reconcileLibrary(AudioLibrary library) {
+    _items = _items
+        .map((audio) => library.audioForPath(audio.path) ?? audio)
+        .toList();
+  }
 }
 
 class PlaybackRequestGate {
@@ -160,6 +166,56 @@ class PlaybackService extends ChangeNotifier
     _playlistIndex = currentIndex;
   }
 
+  /// Rebind metadata only: do not reload the decoder, seek or restart history.
+  void reconcileLibrary(AudioLibrary library) {
+    playbackContext.play(playlistIndex, playlist.value);
+    playbackContext.reconcileLibrary(library);
+    playlist.value = playbackContext.items;
+    _playlistBackup = _playlistBackup
+        .map((audio) => library.audioForPath(audio.path) ?? audio)
+        .toList();
+    final current = nowPlaying;
+    final refreshed =
+        current == null ? null : library.audioForPath(current.path);
+    if (refreshed != null) {
+      nowPlaying = refreshed;
+    }
+    notifyListeners();
+    if (refreshed != null) {
+      playService.lyricService.updateLyric();
+      ThemeProvider.instance.applyThemeFromAudio(refreshed);
+      _updateNowPlayingMetadata(refreshed);
+    }
+  }
+
+  void _updateNowPlayingMetadata(Audio audio) {
+    final requestGeneration = _playbackRequestGate.begin();
+    unawaited(_smtc
+        .updateDisplay(
+      title: audio.title,
+      artist: audio.artist,
+      album: audio.album,
+      duration: (length * 1000).floor(),
+      path: audio.path,
+    )
+        .then((_) async {
+      if (_playbackRequestGate.isCurrent(requestGeneration)) {
+        // Updating the display recreates the Windows timeline, even when paused.
+        await _smtc.updateTimeProperties(progress: (position * 1000).floor());
+      }
+    }).catchError((Object error, StackTrace trace) {
+      LOGGER.e('[refresh media metadata] $error', stackTrace: trace);
+    }));
+    playService.desktopLyricService.canSendMessage.then((canSend) {
+      if (!_playbackRequestGate.isCurrent(requestGeneration) || !canSend) {
+        return;
+      }
+      playService.desktopLyricService
+          .sendPlayerStateMessage(playerState == PlayerState.playing);
+      playService.desktopLyricService.sendNowPlayingMessage(audio);
+    });
+  }
+
   late final _playMode = ValueNotifier(_pref.playMode);
   ValueNotifier<PlayMode> get playMode => _playMode;
 
@@ -202,7 +258,6 @@ class PlaybackService extends ChangeNotifier
     Duration initialPosition = Duration.zero,
   }) async {
     if (audioIndex < 0 || audioIndex >= playlist.length) return;
-    final requestGeneration = _playbackRequestGate.begin();
     final audio = playlist[audioIndex];
     try {
       _endHistorySession();
@@ -219,23 +274,7 @@ class PlaybackService extends ChangeNotifier
       ThemeProvider.instance.applyThemeFromAudio(nowPlaying!);
 
       _smtc.updateState(state: SMTCState.playing);
-      _smtc.updateDisplay(
-        title: nowPlaying!.title,
-        artist: nowPlaying!.artist,
-        album: nowPlaying!.album,
-        duration: (length * 1000).floor(),
-        path: nowPlaying!.path,
-      );
-
-      playService.desktopLyricService.canSendMessage.then((canSend) {
-        if (!_playbackRequestGate.isCurrent(requestGeneration) || !canSend) {
-          return;
-        }
-
-        playService.desktopLyricService
-            .sendPlayerStateMessage(playerState == PlayerState.playing);
-        playService.desktopLyricService.sendNowPlayingMessage(audio);
-      });
+      _updateNowPlayingMetadata(audio);
     } catch (err) {
       LOGGER.e("[load and play] $err");
       showTextOnSnackBar(err.toString());

@@ -103,7 +103,7 @@ ListeningReport buildListeningReport(
       _add(artists, audio.artist, audio.artist, event.listened);
     }
     if (audio.album.trim().isNotEmpty) {
-      _add(albums, audio.album, audio.album, event.listened);
+      _add(albums, audio.albumKey, audio.album, event.listened);
     }
   }
 

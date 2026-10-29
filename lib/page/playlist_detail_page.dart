@@ -22,6 +22,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    AudioLibrary.watch(context);
     final contentList = widget.playlist.audios.values.toList();
     final scheme = Theme.of(context).colorScheme;
 

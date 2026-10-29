@@ -13,9 +13,11 @@ class AudioDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final library = AudioLibrary.watch(context);
+    final audio = library.audioForPath(this.audio.path) ?? this.audio;
     final scheme = Theme.of(context).colorScheme;
-    final artists = AudioLibrary.instance.artistsForAudio(audio);
-    final album = AudioLibrary.instance.albumCollection[audio.album]!;
+    final artists = library.artistsForAudio(audio);
+    final album = library.albumForAudio(audio);
     const space = SizedBox(height: 12.0);
 
     final styleTitle = TextStyle(fontSize: 22, color: scheme.onSurface);
@@ -88,7 +90,16 @@ class AudioDetailPage extends StatelessWidget {
             /// album
             _AudioDetailTile(
               title: "专辑",
-              detail: AlbumTile(album: album),
+              detail:
+                  album == null ? Text(audio.album) : AlbumTile(album: album),
+            ),
+            _AudioDetailTile(
+              title: '专辑艺术家',
+              detail: Text(audio.albumArtist ?? '未填写（使用歌曲艺术家）'),
+            ),
+            _AudioDetailTile(
+              title: '碟号',
+              detail: Text(audio.disc > 0 ? '${audio.disc}' : '未填写'),
             ),
             _AudioDetailTile(
               title: "音轨",

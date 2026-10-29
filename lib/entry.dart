@@ -94,7 +94,8 @@ class Entry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider.value(
+    return AudioLibraryScope(
+        child: ChangeNotifierProvider.value(
       value: ThemeProvider.instance,
       builder: (context, _) {
         final theme = Provider.of<ThemeProvider>(context);
@@ -115,7 +116,7 @@ class Entry extends StatelessWidget {
           routerConfig: config,
         );
       },
-    );
+    ));
   }
 
   late final GoRouter config = GoRouter(

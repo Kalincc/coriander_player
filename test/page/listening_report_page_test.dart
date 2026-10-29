@@ -488,6 +488,47 @@ void main() {
     );
   });
 
+  testWidgets('same-name album bars have distinct artists and detail targets',
+      (tester) async {
+    final now = DateTime(2026, 8, 5, 14);
+    final first = _audio(path: 'D:/music/a.flac', title: 'First')
+      ..artist = 'Artist A';
+    final second = _audio(path: 'D:/music/b.flac', title: 'Second')
+      ..artist = 'Artist B';
+    final history = await _historyWithQualifiedPlays([first, second], now);
+    Album? selected;
+    final router = GoRouter(
+      initialLocation: app_paths.LISTENING_REPORT_PAGE,
+      routes: [
+        GoRoute(
+          path: app_paths.LISTENING_REPORT_PAGE,
+          builder: (_, __) => Scaffold(
+              body: ListeningReportPage(
+                  historyService: history,
+                  audios: [first, second],
+                  now: () => now)),
+        ),
+        GoRoute(
+            path: app_paths.ALBUM_DETAIL_PAGE,
+            builder: (_, state) {
+              selected = state.extra as Album;
+              return const Text('Album destination');
+            }),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pump();
+    await tester.scrollUntilVisible(find.text('Test album · Artist B'), 400,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('Test album · Artist A'), findsOneWidget);
+    await tester.tap(find.text('Test album · Artist B'));
+    await tester.pumpAndSettle();
+    expect(selected!.works, [same(second)]);
+    expect(selected!.id, second.albumKey);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('tapping a song rank navigates only to its detail route',
       (tester) async {
     final now = DateTime(2026, 8, 5, 14);

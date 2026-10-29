@@ -11,7 +11,8 @@ class ArtistsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final contentList = AudioLibrary.instance.artistCollection.values.toList();
+    final contentList =
+        AudioLibrary.watch(context).artistCollection.values.toList();
     return UniPage<Artist>(
       pref: AppPreference.instance.artistsPagePref,
       title: "艺术家",

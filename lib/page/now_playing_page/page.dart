@@ -176,7 +176,9 @@ class _NowPlayingMoreAction extends StatelessWidget {
       );
     }
 
-    final artists = AudioLibrary.instance.artistsForAudio(nowPlaying);
+    final library = AudioLibrary.watch(context);
+    final artists = library.artistsForAudio(nowPlaying);
+    final album = library.albumForAudio(nowPlaying);
 
     return MenuAnchor(
       menuChildren: [
@@ -198,11 +200,12 @@ class _NowPlayingMoreAction extends StatelessWidget {
           child: const Text("艺术家"),
         ),
         MenuItemButton(
-          onPressed: () {
-            final Album album =
-                AudioLibrary.instance.albumCollection[nowPlaying.album]!;
-            context.pushReplacement(app_paths.ALBUM_DETAIL_PAGE, extra: album);
-          },
+          onPressed: album == null
+              ? null
+              : () {
+                  context.pushReplacement(app_paths.ALBUM_DETAIL_PAGE,
+                      extra: album);
+                },
           leadingIcon: const Icon(Symbols.album),
           child: Text(nowPlaying.album),
         ),

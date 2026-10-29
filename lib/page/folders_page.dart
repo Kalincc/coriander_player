@@ -13,7 +13,8 @@ class FoldersPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final contentList = List<AudioFolder>.from(AudioLibrary.instance.folders);
+    final contentList =
+        List<AudioFolder>.from(AudioLibrary.watch(context).folders);
     return UniPage<AudioFolder>(
       pref: AppPreference.instance.foldersPagePref,
       title: "文件夹",

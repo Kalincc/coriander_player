@@ -13,6 +13,8 @@ class FolderDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final folder = AudioLibrary.watch(context).folderForPath(this.folder.path);
+    if (folder == null) return const Center(child: Text('该文件夹已不在音乐库中'));
     final contentList = List<Audio>.from(folder.audios);
     final multiSelectController = MultiSelectController<Audio>();
     return UniPage<Audio>(

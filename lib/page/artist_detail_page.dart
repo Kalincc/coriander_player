@@ -17,6 +17,10 @@ class ArtistDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final artist = AudioLibrary.watch(context).refreshedArtist(this.artist);
+    if (artist == null || artist.works.isEmpty) {
+      return const Center(child: Text('该艺术家已不在音乐库中'));
+    }
     final secondaryContent = List<Audio>.from(artist.works);
     final multiSelectController = MultiSelectController<Audio>();
 

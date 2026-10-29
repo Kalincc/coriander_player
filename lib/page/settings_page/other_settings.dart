@@ -7,8 +7,6 @@ import 'package:coriander_player/component/settings_tile.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/library_update_coordinator.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
-import 'package:coriander_player/library/playlist.dart';
-import 'package:coriander_player/lyric/lyric_source.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:coriander_player/src/rust/api/tag_reader.dart';
 import 'package:filepicker_windows/filepicker_windows.dart';
@@ -125,10 +123,9 @@ class _AudioLibraryEditorDialogState extends State<AudioLibraryEditorDialog> {
                 ),
         reloadLibrary: AudioLibrary.initFromIndex,
         reconcileAppData: () async {
-          await readPlaylists();
-          await readLyricSources();
           await PlayService.instance
               .reconcilePlaybackData(AudioLibrary.instance.audioCollection);
+          AudioLibrary.revision.value++;
         },
         refreshLyrics: LyricSearchIndex.instance.syncCurrentLibrary,
       );

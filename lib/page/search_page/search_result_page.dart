@@ -7,6 +7,7 @@ import 'package:coriander_player/component/audio_tile.dart';
 import 'package:coriander_player/component/lyric_search_result_tile.dart';
 import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
+import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/page/search_page/local_search_controller.dart';
 import 'package:coriander_player/page/search_page/search_page.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
     searchController = LocalSearchController(lyricIndex: index);
     _wasIndexSyncing = index.progress.isSyncing;
     index.addListener(_handleIndexChanged);
+    AudioLibrary.revision.addListener(_runSearch);
     unawaited(searchController.search(initialQuery));
   }
 
@@ -94,6 +96,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
   @override
   void dispose() {
     index.removeListener(_handleIndexChanged);
+    AudioLibrary.revision.removeListener(_runSearch);
     searchBarController.dispose();
     searchController.dispose();
     super.dispose();

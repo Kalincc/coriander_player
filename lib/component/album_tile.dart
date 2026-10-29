@@ -21,7 +21,7 @@ class AlbumTile extends StatelessWidget {
       color: scheme.onSurface,
     );
     return Tooltip(
-      message: album.name,
+      message: '${album.name} · ${album.albumArtist}',
       child: InkWell(
         onTap: () => context.push(app_paths.ALBUM_DETAIL_PAGE, extra: album),
         borderRadius: BorderRadius.circular(8.0),
@@ -49,11 +49,20 @@ class AlbumTile extends StatelessWidget {
               Flexible(
                 child: Padding(
                   padding: const EdgeInsets.only(left: 8.0),
-                  child: Text(
-                    album.name,
-                    softWrap: false,
-                    maxLines: 2,
-                    style: TextStyle(color: scheme.onSurface),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(album.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: scheme.onSurface)),
+                      if (album.albumArtist.isNotEmpty)
+                        Text(album.albumArtist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall),
+                    ],
                   ),
                 ),
               ),

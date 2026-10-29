@@ -13,7 +13,8 @@ class AudiosPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final contentList = List<Audio>.from(AudioLibrary.instance.audioCollection);
+    final contentList =
+        List<Audio>.from(AudioLibrary.watch(context).audioCollection);
     final multiSelectController = MultiSelectController<Audio>();
     return UniPage<Audio>(
       pref: AppPreference.instance.audiosPagePref,

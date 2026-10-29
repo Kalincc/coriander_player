@@ -40,7 +40,12 @@ List<AlbumArtistGroup> buildAlbumArtistGroups({
 }) {
   final groups = artists
       .map((artist) {
-        final albums = artist.albumsMap.values.toList()..sort(sortAlbums);
+        final albums = artist.albumsMap.values
+            .where((album) =>
+                album.albumArtistNames.isEmpty ||
+                album.albumArtistNames.contains(artist.name))
+            .toList()
+          ..sort(sortAlbums);
         return AlbumArtistGroup(artist: artist, albums: albums);
       })
       .where((group) => group.albums.isNotEmpty)

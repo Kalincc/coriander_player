@@ -4,6 +4,7 @@ import 'package:coriander_player/utils.dart';
 import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/page/uni_page.dart';
 import 'package:coriander_player/library/playlist.dart';
+import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -52,6 +53,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
 
   @override
   Widget build(BuildContext context) {
+    AudioLibrary.watch(context);
     return ListenableBuilder(
       listenable: playlistRevision,
       builder: (context, _) {

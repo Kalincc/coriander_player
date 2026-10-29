@@ -39,6 +39,7 @@ class _ListeningReportPageState extends State<ListeningReportPage> {
 
   @override
   Widget build(BuildContext context) {
+    AudioLibrary.watch(context);
     final historyService = _historyService;
     if (historyService == null) {
       return const PageScaffold(
@@ -290,7 +291,10 @@ class _ChartSection extends StatelessWidget {
                 items: ranks.map((rank) {
                   final destination = destinationFor(rank);
                   return ListeningDurationChartItem(
-                    label: rank.name,
+                    label: keyPrefix == 'album' &&
+                            ranks.where((r) => r.name == rank.name).length > 1
+                        ? '${rank.name} · ${(destination?.extra as Album?)?.albumArtist ?? ''}'
+                        : rank.name,
                     listened: rank.listened,
                     playCount: rank.playCount,
                     artwork: artworkFor(rank),
@@ -407,13 +411,16 @@ class _ReportMetadata {
       final album = audio.album.trim().isEmpty
           ? null
           : albumsByName.putIfAbsent(
-              audio.album,
-              () => Album(name: audio.album),
+              audio.albumKey,
+              () => Album(
+                  name: audio.album,
+                  id: audio.albumKey,
+                  albumArtist: audio.effectiveAlbumArtist),
             );
       artist?.works.add(audio);
       album?.works.add(audio);
       if (artist != null && album != null) {
-        artist.albumsMap[album.name] = album;
+        artist.albumsMap[album.id] = album;
         album.artistsMap[artist.name] = artist;
       }
     }

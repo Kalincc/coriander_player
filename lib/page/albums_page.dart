@@ -46,7 +46,7 @@ class _AlbumsPageState extends State<AlbumsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final library = AudioLibrary.instance;
+    final library = AudioLibrary.watch(context);
     final artistNames = filterArtistNames(library.artistCollection.keys, '');
     final selection = _effectiveSelection(library);
     final filter = AlbumArtistFilterButton(

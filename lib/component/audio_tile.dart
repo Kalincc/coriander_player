@@ -33,8 +33,11 @@ class AudioTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final audio = playlist[audioIndex];
-    final artists = AudioLibrary.instance.artistsForAudio(audio);
+    final library = AudioLibrary.watch(context);
+    final audio =
+        library.audioForPath(playlist[audioIndex].path) ?? playlist[audioIndex];
+    final artists = library.artistsForAudio(audio);
+    final album = library.albumForAudio(audio);
 
     return MenuAnchor(
       consumeOutsideTap: true,
@@ -62,11 +65,11 @@ class AudioTile extends StatelessWidget {
 
         /// album
         MenuItemButton(
-          onPressed: () {
-            final Album album =
-                AudioLibrary.instance.albumCollection[audio.album]!;
-            context.push(app_paths.ALBUM_DETAIL_PAGE, extra: album);
-          },
+          onPressed: album == null
+              ? null
+              : () {
+                  context.push(app_paths.ALBUM_DETAIL_PAGE, extra: album);
+                },
           leadingIcon: const Icon(Symbols.album),
           child: Text(audio.album),
         ),

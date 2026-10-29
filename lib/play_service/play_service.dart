@@ -82,6 +82,7 @@ class PlayService {
       ).reconcile(snapshot);
     }
     await reconcilePlaylistAudios(snapshot);
+    playbackService.reconcileLibrary(AudioLibrary.instance);
   }
 
   Future<PlaybackHistoryService> _createPlaybackHistoryService() async {

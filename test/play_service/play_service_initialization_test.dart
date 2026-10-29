@@ -47,6 +47,16 @@ void main() {
     expect(context.currentIndex, 1);
   });
 
+  test('rescan rebinds queue metadata without changing its order or index', () {
+    final old = _audio(r'D:\Music\song.flac');
+    final missing = _audio('D:/Music/offline.flac');
+    final updated = _audio('d:/music/song.flac')..title = 'Updated title';
+    final context = PlaybackPlaylistContext()..play(1, [missing, old, old]);
+    context.reconcileLibrary(AudioLibrary.forTesting([updated]));
+    expect(context.currentIndex, 1);
+    expect(context.items, [same(missing), same(updated), same(updated)]);
+  });
+
   test('initializes only playback history', () async {
     final calls = <String>[];
     final initializer = PlaybackDataInitializer(
