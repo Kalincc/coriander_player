@@ -10,17 +10,12 @@ class Krc extends Lyric {
     String? languageFrame;
 
     final splited = krc.split("\n");
-    for (final item in splited) {
-      if (languageFrame == null) {
-        final tag = item.substring(
-          item.indexOf("[") + 1,
-          item.indexOf("]"),
-        );
-        var splitedTag = tag.split(":");
-        final tagName = splitedTag.firstOrNull;
-        if (tagName?.contains("language") == true) {
-          languageFrame = splitedTag[1];
-        }
+    for (final raw in splited) {
+      final item = raw.trim();
+      if (item.isEmpty) continue;
+      if (item.startsWith('[language:') && item.endsWith(']')) {
+        languageFrame ??= item.substring(10, item.length - 1);
+        continue;
       }
 
       final krcLine = KrcLine.fromLine(item);
@@ -31,23 +26,26 @@ class Krc extends Lyric {
     }
 
     if (languageFrame != null) {
-      final Map languageMap =
-          json.decode(utf8.decode(base64.decode(languageFrame)));
-      List trans = [];
-      for (var item in languageMap["content"]) {
-        if (item["type"] == 1) {
-          final List transContent = item["lyricContent"];
-          for (List transLine in transContent) {
-            trans.add(transLine.first);
+      // Translation metadata is optional; an invalid frame must not hide text.
+      try {
+        final languageMap =
+            json.decode(utf8.decode(base64.decode(languageFrame)));
+        final content = languageMap is Map ? languageMap['content'] : null;
+        if (content is List) {
+          for (final item in content) {
+            if (item is! Map || item['type'] != 1) continue;
+            final translations = item['lyricContent'];
+            if (translations is! List) continue;
+            for (var i = 0; i < lines.length && i < translations.length; i++) {
+              final entry = translations[i];
+              if (entry is List && entry.isNotEmpty && entry.first is String) {
+                lines[i].translation = entry.first as String;
+              }
+            }
+            break;
           }
         }
-      }
-      int linesIt = 0, transIt = 0;
-      while ((linesIt < lines.length) || (transIt < trans.length)) {
-        lines[linesIt].translation = trans[transIt];
-        linesIt += 1;
-        transIt += 1;
-      }
+      } on FormatException {/* Keep the original lyric. */}
     }
 
     // 添加空白
@@ -82,20 +80,15 @@ class KrcLine extends SyncLyricLine {
   KrcLine(super.start, super.length, super.words, [super.translation]);
 
   static KrcLine? fromLine(String line, [String? translation]) {
-    final splitedLine = line.split("]");
-    final from = splitedLine[0].indexOf("[") + 1;
-    final splitedTime = splitedLine[0].substring(from).split(",");
+    final match = RegExp(r'^\[(\d+),(\d+)\](.*)$').firstMatch(line);
+    if (match == null) return null;
+    final startMs = int.tryParse(match[1]!);
+    final lengthMs = int.tryParse(match[2]!);
+    if (startMs == null || lengthMs == null) return null;
+    final start = Duration(milliseconds: startMs);
+    final length = Duration(milliseconds: lengthMs);
 
-    if (splitedTime.length != 2) return null;
-
-    final Duration start = Duration(
-      milliseconds: int.tryParse(splitedTime[0]) ?? 0,
-    );
-    final Duration length = Duration(
-      milliseconds: int.tryParse(splitedTime[1]) ?? 0,
-    );
-
-    final splitedContent = splitedLine[1].split("<");
+    final splitedContent = match[3]!.split("<");
     final List<KrcWord> words = [];
     for (final item in splitedContent) {
       final qrcWord = KrcWord.fromWord(item, start);

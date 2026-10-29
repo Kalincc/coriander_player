@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -53,7 +54,7 @@ void main() {
     expect(progress.last.phase, UpdateDownloadPhase.verifying);
     expect(
         progress
-            .firstWhere((item) => item.phase == UpdateDownloadPhase.downloading)
+            .lastWhere((item) => item.phase == UpdateDownloadPhase.downloading)
             .fraction,
         1);
   });
@@ -166,6 +167,98 @@ void main() {
     );
     expect(temporaryDirectory.listSync(), isEmpty);
   });
+
+  for (final stallHeaders in [true, false]) {
+    test(
+        'cancel interrupts ${stallHeaders ? 'waiting for headers' : 'a stalled body'} and retry works',
+        () async {
+      const name = 'Coriander.Player.1.5.1-kalin.10.Setup.exe';
+      final started = Completer<void>();
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var stall = true;
+      server.listen((request) async {
+        if (stall && (stallHeaders || request.uri.path != '/SHA256SUMS.txt')) {
+          if (!stallHeaders) {
+            request.response.bufferOutput = false;
+            request.response.contentLength = 32768;
+            request.response.add(List<int>.filled(16384, 1));
+            await request.response.flush();
+          }
+          if (stallHeaders && !started.isCompleted) started.complete();
+          return; // Intentionally keep the response open with no further data.
+        }
+        final bytes = utf8.encode('payload');
+        request.response.write(request.uri.path == '/SHA256SUMS.txt'
+            ? '${sha256.convert(bytes)}  $name\n'
+            : 'payload');
+        await request.response.close();
+      });
+      final directory =
+          await Directory.systemTemp.createTemp('coriander-stall-');
+      final downloader = UpdateDownloader();
+      final cancellation = UpdateCancellation();
+      final downloading = downloader.downloadAndVerify(
+          _candidate(server.port, name), directory, cancellation: cancellation,
+          onProgress: (progress) {
+        if (!stallHeaders &&
+            progress.receivedBytes > 0 &&
+            !started.isCompleted) {
+          started.complete();
+        }
+      });
+      final outcome = downloading.then<Object>((value) => value,
+          onError: (Object error, StackTrace _) => error);
+      addTearDown(() async {
+        cancellation.cancel();
+        await outcome.timeout(const Duration(seconds: 1));
+        await server.close(force: true);
+        await directory.delete(recursive: true);
+      });
+      await started.future.timeout(const Duration(seconds: 3));
+      cancellation.cancel();
+      expect(await outcome.timeout(const Duration(milliseconds: 500)),
+          isA<UpdateCancelledException>());
+      expect(directory.listSync(), isEmpty);
+      stall = false;
+      final verified = await downloader.downloadAndVerify(
+          _candidate(server.port, name), directory,
+          cancellation: UpdateCancellation(), onProgress: (_) {});
+      expect(await verified.installer.readAsString(), 'payload');
+    });
+  }
+
+  for (final stallBody in [false, true]) {
+    test(
+        'stalled ${stallBody ? 'body' : 'headers'} times out and removes partial files',
+        () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        if (!stallBody) return;
+        if (request.uri.path == '/SHA256SUMS.txt') {
+          request.response.write('${'a' * 64}  Setup.exe\n');
+          await request.response.close();
+        } else {
+          request.response.bufferOutput = false;
+          request.response.contentLength = 32768;
+          request.response.add(List<int>.filled(16384, 1));
+          await request.response.flush();
+        }
+      });
+      final directory =
+          await Directory.systemTemp.createTemp('coriander-timeout-');
+      addTearDown(() async {
+        await server.close(force: true);
+        await directory.delete(recursive: true);
+      });
+      await expectLater(
+          UpdateDownloader(timeout: const Duration(milliseconds: 100))
+              .downloadAndVerify(
+                  _candidate(server.port, 'Setup.exe'), directory,
+                  cancellation: UpdateCancellation(), onProgress: (_) {}),
+          throwsA(isA<UpdateDownloadException>()));
+      expect(directory.listSync(), isEmpty);
+    });
+  }
 }
 
 UpdateCandidate _candidate(int port, String installerName) {

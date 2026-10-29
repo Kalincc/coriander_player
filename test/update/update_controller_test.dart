@@ -165,7 +165,8 @@ void main() {
     controller.dispose();
   });
 
-  test('cancelling an active download reports a cancelled state', () async {
+  test('cancel is available before the first download progress event',
+      () async {
     final events = <String>[];
     final downloadStarted = Completer<void>();
     final controller = controllerFixture(
@@ -173,11 +174,6 @@ void main() {
       events: events,
       download: (candidate, directory, cancellation, onProgress) async {
         downloadStarted.complete();
-        onProgress(const UpdateDownloadProgress(
-          phase: UpdateDownloadPhase.downloading,
-          receivedBytes: 0,
-          totalBytes: 1,
-        ));
         while (!cancellation.isCancelled) {
           await Future<void>.delayed(const Duration(milliseconds: 1));
         }
@@ -188,6 +184,7 @@ void main() {
     await controller.check();
     final installFuture = controller.install();
     await downloadStarted.future;
+    expect(controller.state, isA<UpdateDownloading>());
     controller.cancelDownload();
     await installFuture;
 

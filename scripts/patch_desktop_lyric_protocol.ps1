@@ -28,6 +28,16 @@ $replacement = @'
         .listen((event) {
 '@
 $patched = $source.Replace($needle, $replacement.TrimEnd("`r", "`n"))
+
+$actionPath = Join-Path $sourceRoot 'lib\component\action_row.dart'
+$actions = Get-Content -LiteralPath $actionPath -Raw -Encoding utf8
+$controlWrites = ([regex]::Matches($actions, [regex]::Escape('stdout.write('))).Count
+if ($controlWrites -ne 5) {
+    throw "Expected five unframed control messages in $actionPath, found $controlWrites."
+}
+$patchedActions = $actions.Replace('stdout.write(', 'stdout.writeln(')
+
 Set-Content -LiteralPath $controllerPath -Value $patched -Encoding utf8 -NoNewline
+Set-Content -LiteralPath $actionPath -Value $patchedActions -Encoding utf8 -NoNewline
 
 Write-Output "Patched desktop lyric protocol: $controllerPath"

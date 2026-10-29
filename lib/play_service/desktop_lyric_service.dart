@@ -39,6 +39,24 @@ msg.LyricLineChangedMessage? desktopLyricLineMessage(
   );
 }
 
+Stream<msg.ControlEventMessage> desktopLyricControlMessages(
+    Stream<List<int>> bytes) async* {
+  await for (final frame
+      in bytes.transform(utf8.decoder).transform(const LineSplitter())) {
+    try {
+      final message = json.decode(frame);
+      if (message is Map &&
+          message['type'] ==
+              msg.getMessageTypeName<msg.ControlEventMessage>() &&
+          message['message'] is Map<String, dynamic>) {
+        yield msg.ControlEventMessage.fromJson(message['message']);
+      }
+    } catch (error) {
+      LOGGER.e('[desktop lyric] $error');
+    }
+  }
+}
+
 class DesktopLyricService extends ChangeNotifier {
   final PlayService playService;
   DesktopLyricService(this.playService) {
@@ -138,43 +156,34 @@ class DesktopLyricService extends ChangeNotifier {
       LOGGER.e("[desktop lyric] $event");
     });
 
-    _desktopLyricSubscription = process?.stdout.transform(utf8.decoder).listen(
-      (event) {
-        try {
-          final Map messageMap = json.decode(event);
-          final String messageType = messageMap["type"];
-          final messageContent = messageMap["message"] as Map<String, dynamic>;
-          if (messageType ==
-              msg.getMessageTypeName<msg.ControlEventMessage>()) {
-            final controlEvent =
-                msg.ControlEventMessage.fromJson(messageContent);
-            switch (controlEvent.event) {
-              case msg.ControlEvent.pause:
-                _playbackService.pause();
-                break;
-              case msg.ControlEvent.start:
-                _playbackService.start();
-                break;
-              case msg.ControlEvent.previousAudio:
-                _playbackService.lastAudio();
-                break;
-              case msg.ControlEvent.nextAudio:
-                _playbackService.nextAudio();
-                break;
-              case msg.ControlEvent.lock:
-                isLocked = true;
-                notifyListeners();
-                break;
-              case msg.ControlEvent.close:
-                killDesktopLyric();
-                break;
-            }
-          }
-        } catch (err) {
-          LOGGER.e("[desktop lyric] $err");
-        }
-      },
-    );
+    _desktopLyricSubscription = process == null
+        ? null
+        : desktopLyricControlMessages(process.stdout).listen(
+            (controlEvent) {
+              switch (controlEvent.event) {
+                case msg.ControlEvent.pause:
+                  _playbackService.pause();
+                  break;
+                case msg.ControlEvent.start:
+                  _playbackService.start();
+                  break;
+                case msg.ControlEvent.previousAudio:
+                  _playbackService.lastAudio();
+                  break;
+                case msg.ControlEvent.nextAudio:
+                  _playbackService.nextAudio();
+                  break;
+                case msg.ControlEvent.lock:
+                  isLocked = true;
+                  notifyListeners();
+                  break;
+                case msg.ControlEvent.close:
+                  killDesktopLyric();
+                  break;
+              }
+            },
+            onError: (Object error) => LOGGER.e('[desktop lyric] $error'),
+          );
 
     notifyListeners();
   }

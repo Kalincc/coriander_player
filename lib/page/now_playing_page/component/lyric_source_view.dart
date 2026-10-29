@@ -188,11 +188,19 @@ class _SetLyricSourceBtn extends StatelessWidget {
   }
 }
 
-class _SetLyricSourceDialog extends StatelessWidget {
+class _SetLyricSourceDialog extends StatefulWidget {
   const _SetLyricSourceDialog({required this.audio, this.search});
 
   final Audio audio;
   final Future<OnlineLyricSearchReport> Function(Audio audio)? search;
+
+  @override
+  State<_SetLyricSourceDialog> createState() => _SetLyricSourceDialogState();
+}
+
+class _SetLyricSourceDialogState extends State<_SetLyricSourceDialog> {
+  Audio get audio => widget.audio;
+  late final _search = (widget.search ?? searchOnlineLyrics)(audio);
 
   @override
   Widget build(BuildContext context) {
@@ -232,14 +240,15 @@ class _SetLyricSourceDialog extends StatelessWidget {
                     audio.path,
                     LyricSource(LyricSourceType.local),
                   );
-                  PlayService.instance.lyricService.useLocalLyric();
+                  PlayService.instance.lyricService
+                      .useLocalLyric(forAudio: audio);
                   Navigator.pop(context);
                 },
               ),
               const Divider(),
               Expanded(
                 child: FutureBuilder<OnlineLyricSearchReport>(
-                  future: (search ?? searchOnlineLyrics)(audio),
+                  future: _search,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState != ConnectionState.done) {
                       return const Center(
@@ -426,7 +435,8 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
               kugouSongHash: searchResult.kugouSongHash,
               neteaseSongId: searchResult.neteaseSongId,
             ));
-        PlayService.instance.lyricService.useSpecificLyric(lyric);
+        PlayService.instance.lyricService
+            .useSpecificLyric(lyric, forAudio: audio);
 
         Navigator.pop(context);
       },

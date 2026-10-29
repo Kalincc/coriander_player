@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/audio_library.dart';
+import 'package:coriander_player/library/audio_path_key.dart';
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
 import 'package:coriander_player/lyric/lyric_source.dart';
@@ -165,17 +166,15 @@ class LyricService extends ChangeNotifier {
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return;
 
-    final generation = ++_lyricGeneration;
-    currLyricFuture.ignore();
-
     final lyricSource = lyricSourceForPath(nowPlaying.path);
+    final Future<Lyric?> next;
     if (lyricSource == null) {
-      currLyricFuture = _getLyricDefault(AppSettings.instance.localLyricFirst);
+      next = _getLyricDefault(AppSettings.instance.localLyricFirst);
     } else {
       if (lyricSource.source == LyricSourceType.local) {
-        currLyricFuture = Lrc.fromAudioPath(nowPlaying);
+        next = Lrc.fromAudioPath(nowPlaying);
       } else {
-        currLyricFuture = getOnlineLyric(
+        next = getOnlineLyric(
           audio: nowPlaying,
           qqSongId: lyricSource.qqSongId,
           kugouSongHash: lyricSource.kugouSongHash,
@@ -184,49 +183,44 @@ class LyricService extends ChangeNotifier {
       }
     }
 
-    currLyricFuture.then((_) {
-      if (_disposed || generation != _lyricGeneration) return;
-      refreshCurrentLyric();
-    });
-    notifyListeners();
+    _replaceLyric(next);
   }
 
-  void useLocalLyric() {
+  void useLocalLyric({Audio? forAudio}) {
+    if (!_canApplyTo(forAudio)) return;
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return;
-
-    final generation = ++_lyricGeneration;
-    currLyricFuture.ignore();
-    currLyricFuture = Lrc.fromAudioPath(nowPlaying);
-    currLyricFuture.then((_) {
-      if (_disposed || generation != _lyricGeneration) return;
-      refreshCurrentLyric();
-    });
-    notifyListeners();
+    _replaceLyric(Lrc.fromAudioPath(nowPlaying));
   }
 
   void useOnlineLyric() {
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return;
 
-    final generation = ++_lyricGeneration;
-    currLyricFuture.ignore();
-    currLyricFuture = getMostMatchedLyric(nowPlaying);
-    currLyricFuture.then((_) {
-      if (_disposed || generation != _lyricGeneration) return;
-      refreshCurrentLyric();
-    });
-    notifyListeners();
+    _replaceLyric(getMostMatchedLyric(nowPlaying));
   }
 
-  void useSpecificLyric(Lyric lyric) {
+  void useSpecificLyric(Lyric lyric, {Audio? forAudio}) {
+    if (!_canApplyTo(forAudio)) return;
+    _replaceLyric(Future.value(lyric));
+  }
+
+  bool _canApplyTo(Audio? audio) {
+    if (_disposed) return false;
+    if (audio == null) return true;
+    final current = _getNowPlaying();
+    return current != null &&
+        audioPathKey(current.path) == audioPathKey(audio.path);
+  }
+
+  void _replaceLyric(Future<Lyric?> next) {
     final generation = ++_lyricGeneration;
     currLyricFuture.ignore();
-    currLyricFuture = Future.value(lyric);
+    currLyricFuture = next;
     currLyricFuture.then((_) {
       if (_disposed || generation != _lyricGeneration) return;
       refreshCurrentLyric();
-    });
+    }, onError: (Object _, StackTrace __) {});
     notifyListeners();
   }
 

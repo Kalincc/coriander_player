@@ -8,7 +8,6 @@ import 'package:coriander_player/lyric/lyric_timing.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:coriander_player/play_service/play_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
 class LyricViewTile extends StatelessWidget {
@@ -322,10 +321,81 @@ class _LrcLineContent extends StatelessWidget {
 
 /// 歌词间奏表示
 /// lrcLine 和 syncLine 必须有且只有一个不为空
-class LyricTransitionTile extends StatelessWidget {
+class LyricTransitionTile extends StatefulWidget {
   final LrcLine? lrcLine;
   final SyncLyricLine? syncLine;
-  const LyricTransitionTile({super.key, this.lrcLine, this.syncLine});
+  final Stream<double>? positionStream;
+  final Duration Function()? lyricOffset;
+  const LyricTransitionTile(
+      {super.key,
+      this.lrcLine,
+      this.syncLine,
+      this.positionStream,
+      this.lyricOffset})
+      : assert((lrcLine == null) != (syncLine == null));
+
+  @override
+  State<LyricTransitionTile> createState() => _LyricTransitionTileState();
+}
+
+class _LyricTransitionTileState extends State<LyricTransitionTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animation;
+  StreamSubscription<double>? _positionSubscription;
+  double _progress = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _animation =
+        AnimationController(vsync: this, duration: const Duration(seconds: 3))
+          ..repeat(reverse: true);
+    _listen();
+  }
+
+  void _listen() {
+    _positionSubscription = (widget.positionStream ??
+            PlayService.instance.playbackService.positionStream)
+        .listen((position) {
+      final line = widget.lrcLine ?? widget.syncLine!;
+      final length = widget.lrcLine?.length ?? widget.syncLine!.length;
+      final progress = lyricWordProgress(
+        audioPosition: Duration(
+            microseconds: (position * Duration.microsecondsPerSecond).round()),
+        wordStart: line.start,
+        wordLength: length,
+        offset: widget.lyricOffset?.call() ??
+            PlayService.instance.lyricService.lyricOffset,
+      );
+      if (progress >= 1) {
+        _animation.stop();
+      } else if (!_animation.isAnimating) {
+        _animation.repeat(reverse: true);
+      }
+      setState(() => _progress = progress);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant LyricTransitionTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.positionStream != widget.positionStream) {
+      _positionSubscription?.cancel();
+      _listen();
+    }
+    if (oldWidget.lrcLine != widget.lrcLine ||
+        oldWidget.syncLine != widget.syncLine) {
+      _progress = 0;
+      if (!_animation.isAnimating) _animation.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _positionSubscription?.cancel();
+    _animation.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -336,10 +406,11 @@ class LyricTransitionTile extends StatelessWidget {
       width: 80.0,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
-        child: CustomPaint(
-          painter: LyricTransitionPainter(
-            scheme,
-            LyricTransitionTileController(lrcLine, syncLine),
+        child: AnimatedBuilder(
+          animation: _animation,
+          builder: (context, _) => CustomPaint(
+            painter:
+                LyricTransitionPainter(scheme, _progress, _animation.value),
           ),
         ),
       ),
@@ -349,7 +420,8 @@ class LyricTransitionTile extends StatelessWidget {
 
 class LyricTransitionPainter extends CustomPainter {
   final ColorScheme scheme;
-  final LyricTransitionTileController controller;
+  final double progress;
+  final double sizeFactor;
 
   final Paint circlePaint1 = Paint();
   final Paint circlePaint2 = Paint();
@@ -357,22 +429,21 @@ class LyricTransitionPainter extends CustomPainter {
 
   final double radius = 6;
 
-  LyricTransitionPainter(this.scheme, this.controller)
-      : super(repaint: controller);
+  LyricTransitionPainter(this.scheme, this.progress, this.sizeFactor);
 
   @override
   void paint(Canvas canvas, Size size) {
     circlePaint1.color = scheme.onSecondaryContainer.withOpacity(
-      0.05 + min(controller.progress * 3, 1) * 0.95,
+      0.05 + min(progress * 3, 1) * 0.95,
     );
     circlePaint2.color = scheme.onSecondaryContainer.withOpacity(
-      0.05 + min(max(controller.progress - 1 / 3, 0) * 3, 1) * 0.95,
+      0.05 + min(max(progress - 1 / 3, 0) * 3, 1) * 0.95,
     );
     circlePaint3.color = scheme.onSecondaryContainer.withOpacity(
-      0.05 + min(max(controller.progress - 2 / 3, 0) * 3, 1) * 0.95,
+      0.05 + min(max(progress - 2 / 3, 0) * 3, 1) * 0.95,
     );
 
-    final rWithFactor = radius + controller.sizeFactor;
+    final rWithFactor = radius + sizeFactor;
     final c1 = Offset(rWithFactor, 8);
     final c2 = Offset(4 * rWithFactor, 8);
     final c3 = Offset(7 * rWithFactor, 8);
@@ -383,70 +454,11 @@ class LyricTransitionPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(LyricTransitionPainter oldDelegate) => false;
+  bool shouldRepaint(LyricTransitionPainter oldDelegate) =>
+      oldDelegate.scheme != scheme ||
+      oldDelegate.progress != progress ||
+      oldDelegate.sizeFactor != sizeFactor;
 
   @override
   bool shouldRebuildSemantics(LyricTransitionPainter oldDelegate) => false;
-}
-
-class LyricTransitionTileController extends ChangeNotifier {
-  final LrcLine? lrcLine;
-  final SyncLyricLine? syncLine;
-
-  final playbackService = PlayService.instance.playbackService;
-
-  double progress = 0;
-  late final StreamSubscription positionStreamSub;
-
-  double sizeFactor = 0;
-  double k = 1;
-  late final Ticker factorTicker;
-
-  LyricTransitionTileController([this.lrcLine, this.syncLine]) {
-    positionStreamSub = playbackService.positionStream.listen(_updateProgress);
-    factorTicker = Ticker((elapsed) {
-      sizeFactor += k * 1 / 180;
-      if (sizeFactor > 1) {
-        k = -1;
-        sizeFactor = 1;
-      } else if (sizeFactor < 0) {
-        k = 1;
-        sizeFactor = 0;
-      }
-      notifyListeners();
-    });
-    factorTicker.start();
-  }
-
-  void _updateProgress(double position) {
-    late int startInMs;
-    late int lengthInMs;
-    if (lrcLine != null) {
-      startInMs = lrcLine!.start.inMilliseconds;
-      lengthInMs = lrcLine!.length.inMilliseconds;
-    } else {
-      startInMs = syncLine!.start.inMilliseconds;
-      lengthInMs = syncLine!.length.inMilliseconds;
-    }
-    progress = lyricWordProgress(
-      audioPosition: Duration(
-        microseconds: (position * Duration.microsecondsPerSecond).round(),
-      ),
-      wordStart: Duration(milliseconds: startInMs),
-      wordLength: Duration(milliseconds: lengthInMs),
-      offset: PlayService.instance.lyricService.lyricOffset,
-    );
-    notifyListeners();
-
-    if (progress >= 1) {
-      dispose();
-    }
-  }
-
-  @override
-  void dispose() {
-    positionStreamSub.cancel();
-    factorTicker.dispose();
-    super.dispose();
-  }
 }

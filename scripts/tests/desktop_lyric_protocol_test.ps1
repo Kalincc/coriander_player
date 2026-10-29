@@ -13,6 +13,17 @@ function New-ControllerFixture {
     New-Item -ItemType Directory -Path $lib -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $lib 'desktop_lyric_controller.dart') `
         -Value $Content -Encoding utf8
+    $component = Join-Path $lib 'component'
+    New-Item -ItemType Directory -Path $component -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $component 'action_row.dart') -Encoding utf8 -Value @'
+void sendControls() {
+  stdout.write('lock');
+  stdout.write('previous');
+  stdout.write('play');
+  stdout.write('next');
+  stdout.write('close');
+}
+'@
 }
 
 try {
@@ -47,6 +58,11 @@ class DesktopLyricController {
     }
     if ($patched -match 'stdin\.transform\(utf8\.decoder\)\.listen') {
         throw 'Patched controller still parses raw stream chunks.'
+    }
+    $actions = Get-Content -Raw -LiteralPath (Join-Path $testRoot 'lib\component\action_row.dart')
+    if (([regex]::Matches($actions, 'stdout\.writeln\(')).Count -ne 5 -or
+        $actions.Contains('stdout.write(')) {
+        throw 'Control messages must each end with a newline.'
     }
 
     $mismatchRoot = Join-Path $env:TEMP "coriander-desktop-lyric-protocol-mismatch-$([guid]::NewGuid().ToString('N'))"

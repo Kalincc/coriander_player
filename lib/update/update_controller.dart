@@ -6,7 +6,6 @@ import 'package:coriander_player/application_shutdown.dart';
 import 'package:coriander_player/release_info.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as path;
 
 import 'install_environment.dart';
 import 'update_downloader.dart';
@@ -83,13 +82,7 @@ abstract interface class UpdateControllerView implements Listenable {
 }
 
 Future<Directory> _createProductionUpdateDirectory() async {
-  final directory = Directory(
-    path.join(Directory.systemTemp.path, 'coriander-player-update'),
-  );
-  if (await directory.exists()) {
-    await directory.delete(recursive: true);
-  }
-  return directory.create(recursive: true);
+  return Directory.systemTemp.createTemp('coriander-player-update-');
 }
 
 Future<void> _deleteTemporaryDirectory(Directory directory) async {
@@ -206,6 +199,13 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
     final cancellation = UpdateCancellation();
     _cancellation = cancellation;
     final candidate = available.candidate;
+    _setState(UpdateDownloading(
+        candidate,
+        const UpdateDownloadProgress(
+          phase: UpdateDownloadPhase.downloading,
+          receivedBytes: 0,
+          totalBytes: null,
+        )));
     Directory? temporaryDirectory;
     var installerStarted = false;
 
@@ -247,7 +247,11 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
     } on UpdateDownloadException catch (error, stackTrace) {
       if (_isCurrent(generation)) {
         LOGGER.e(error, stackTrace: stackTrace);
-        _setState(const UpdateFailed('下载更新失败，请检查网络后重试。', canRetry: true));
+        _setState(UpdateFailed(
+            error.cause is TimeoutException
+                ? '下载更新超时，请检查网络后重试。'
+                : '下载更新失败，请检查网络后重试。',
+            canRetry: true));
       }
     } catch (error, stackTrace) {
       if (_isCurrent(generation)) {

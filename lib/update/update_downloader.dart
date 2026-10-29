@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -25,11 +26,14 @@ class UpdateDownloadProgress {
 }
 
 class UpdateCancellation {
-  bool _cancelled = false;
+  final _cancelled = Completer<void>();
 
-  bool get isCancelled => _cancelled;
+  bool get isCancelled => _cancelled.isCompleted;
+  Future<void> get whenCancelled => _cancelled.future;
 
-  void cancel() => _cancelled = true;
+  void cancel() {
+    if (!isCancelled) _cancelled.complete();
+  }
 }
 
 class UpdateCancelledException implements Exception {
@@ -91,9 +95,13 @@ Future<String> fileSha256(File file) async {
 }
 
 class UpdateDownloader {
-  UpdateDownloader({HttpClient? client}) : _client = client ?? HttpClient();
+  UpdateDownloader(
+      {HttpClient Function()? createClient,
+      this.timeout = const Duration(seconds: 20)})
+      : _createClient = createClient ?? (() => HttpClient());
 
-  final HttpClient _client;
+  final HttpClient Function() _createClient;
+  final Duration timeout;
 
   Future<VerifiedUpdate> downloadAndVerify(
     UpdateCandidate candidate,
@@ -101,6 +109,11 @@ class UpdateDownloader {
     required UpdateCancellation cancellation,
     required void Function(UpdateDownloadProgress progress) onProgress,
   }) async {
+    final client = _createClient()..connectionTimeout = timeout;
+    var finished = false;
+    unawaited(cancellation.whenCancelled.then((_) {
+      if (!finished) client.close(force: true);
+    }));
     final installer = File(
       path.join(temporaryDirectory.path, candidate.installerFileName),
     );
@@ -116,9 +129,15 @@ class UpdateDownloader {
 
     try {
       _throwIfCancelled(cancellation);
+      onProgress(const UpdateDownloadProgress(
+        phase: UpdateDownloadPhase.downloading,
+        receivedBytes: 0,
+        totalBytes: null,
+      ));
       await temporaryDirectory.create(recursive: true);
 
       final manifest = await _readText(
+        client,
         candidate.checksumUri,
         cancellation,
       );
@@ -137,6 +156,7 @@ class UpdateDownloader {
       }
 
       await _downloadInstaller(
+        client,
         candidate.installerUri,
         partial,
         cancellation,
@@ -172,22 +192,33 @@ class UpdateDownloader {
       );
 
       return VerifiedUpdate(installer: installer, installLog: installLog);
-    } catch (_) {
+    } catch (error, stackTrace) {
       await _deleteIfExists(partial);
       if (installerMoved) {
         await _deleteIfExists(installer);
       }
+      _throwIfCancelled(cancellation);
+      if (error is TimeoutException) {
+        Error.throwWithStackTrace(
+          UpdateDownloadException('下载更新超时。', cause: error),
+          stackTrace,
+        );
+      }
       rethrow;
+    } finally {
+      finished = true;
+      client.close(force: true);
     }
   }
 
   Future<String> _readText(
+    HttpClient client,
     Uri uri,
     UpdateCancellation cancellation,
   ) async {
-    final response = await _openResponse(uri, cancellation);
+    final response = await _openResponse(client, uri, cancellation);
     if (response.statusCode != HttpStatus.ok) {
-      await response.drain<void>();
+      await response.drain<void>().timeout(timeout);
       throw UpdateDownloadException(
         '下载校验文件失败（HTTP ${response.statusCode}）。',
         uri: uri,
@@ -196,7 +227,7 @@ class UpdateDownloader {
 
     final bytes = <int>[];
     try {
-      await for (final chunk in response) {
+      await for (final chunk in response.timeout(timeout)) {
         _throwIfCancelled(cancellation);
         bytes.addAll(chunk);
       }
@@ -215,14 +246,15 @@ class UpdateDownloader {
   }
 
   Future<void> _downloadInstaller(
+    HttpClient client,
     Uri uri,
     File partial,
     UpdateCancellation cancellation,
     void Function(UpdateDownloadProgress progress) onProgress,
   ) async {
-    final response = await _openResponse(uri, cancellation);
+    final response = await _openResponse(client, uri, cancellation);
     if (response.statusCode != HttpStatus.ok) {
-      await response.drain<void>();
+      await response.drain<void>().timeout(timeout);
       throw UpdateDownloadException(
         '下载安装包失败（HTTP ${response.statusCode}）。',
         uri: uri,
@@ -235,7 +267,7 @@ class UpdateDownloader {
     final sink = partial.openWrite();
     var sinkClosed = false;
     try {
-      await for (final chunk in response) {
+      await for (final chunk in response.timeout(timeout)) {
         _throwIfCancelled(cancellation);
         sink.add(chunk);
         receivedBytes += chunk.length;
@@ -271,6 +303,7 @@ class UpdateDownloader {
   }
 
   Future<HttpClientResponse> _openResponse(
+    HttpClient client,
     Uri uri,
     UpdateCancellation cancellation,
   ) async {
@@ -278,17 +311,17 @@ class UpdateDownloader {
     try {
       var currentUri = uri;
       for (var redirectCount = 0; redirectCount <= 5; redirectCount++) {
-        final request = await _client.getUrl(currentUri);
+        final request = await _wait(client.getUrl(currentUri), cancellation);
         request.followRedirects = false;
         _throwIfCancelled(cancellation);
-        final response = await request.close();
+        final response = await _wait(request.close(), cancellation);
         _throwIfCancelled(cancellation);
 
         final isRedirect =
             response.statusCode >= 300 && response.statusCode < 400;
         if (!isRedirect) {
           if (uri.scheme == 'https' && currentUri.scheme != 'https') {
-            await response.drain<void>();
+            await response.drain<void>().timeout(timeout);
             throw UpdateDownloadException(
               '更新服务器重定向到了不安全地址。',
               uri: uri,
@@ -298,7 +331,7 @@ class UpdateDownloader {
         }
 
         final location = response.headers.value(HttpHeaders.locationHeader);
-        await response.drain<void>();
+        await response.drain<void>().timeout(timeout);
         if (location == null || location.isEmpty) {
           throw UpdateDownloadException(
             '更新服务器返回了无效的重定向。',
@@ -335,6 +368,13 @@ class UpdateDownloader {
       throw const UpdateCancelledException();
     }
   }
+
+  Future<T> _wait<T>(Future<T> operation, UpdateCancellation cancellation) =>
+      Future.any([
+        operation.timeout(timeout),
+        cancellation.whenCancelled
+            .then<T>((_) => throw const UpdateCancelledException()),
+      ]);
 
   Future<void> _deleteIfExists(File file) async {
     if (await file.exists()) {

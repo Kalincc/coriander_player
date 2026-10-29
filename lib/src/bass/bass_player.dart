@@ -44,6 +44,22 @@ const BASS_PLUGINS = [
   "BASS\\basswv.dll"
 ];
 
+class PlaybackPositionUpdater {
+  PlaybackPositionUpdater(this.onTick);
+  final void Function() onTick;
+  Timer? _timer;
+
+  void start() {
+    stop();
+    _timer = Timer.periodic(const Duration(milliseconds: 33), (_) => onTick());
+  }
+
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+}
+
 class BassPlayer implements OutputModeOperations {
   late final ffi.DynamicLibrary _bassLib;
   late final ffi.DynamicLibrary _bassWasapiLib;
@@ -57,7 +73,7 @@ class BassPlayer implements OutputModeOperations {
   bool wasapiExclusive = false;
   bool _wasapiInitialized = false;
 
-  Timer? _positionUpdater;
+  late final _positionUpdater = PlaybackPositionUpdater(_updatePosition);
   final _positionStreamController = StreamController<double>.broadcast();
   final _playerStateStreamController =
       StreamController<PlayerState>.broadcast();
@@ -126,18 +142,12 @@ class BassPlayer implements OutputModeOperations {
   Stream<PlayerState> get playerStateStream =>
       _playerStateStreamController.stream;
 
-  Timer _getPositionUpdater() {
-    return Timer.periodic(
-      const Duration(milliseconds: 33),
-      (timer) {
-        _positionStreamController.add(position);
-
-        /// check if the channel has completed
-        if (playerState == PlayerState.stopped) {
-          _playerStateStreamController.add(PlayerState.completed);
-        }
-      },
-    );
+  void _updatePosition() {
+    _positionStreamController.add(position);
+    if (playerState == PlayerState.stopped) {
+      _positionUpdater.stop();
+      _playerStateStreamController.add(PlayerState.completed);
+    }
   }
 
   void _bassInit() {
@@ -284,7 +294,7 @@ class BassPlayer implements OutputModeOperations {
         _startWasapiOutput();
       } else {
         _playerStateStreamController.add(playerState);
-        _positionUpdater?.cancel();
+        _positionUpdater.stop();
       }
       return;
     }
@@ -302,7 +312,7 @@ class BassPlayer implements OutputModeOperations {
   void setSource(String path) {
     if (_wasapiInitialized) disposeWasapi();
     if (_fstream != null) {
-      _positionUpdater?.cancel();
+      _positionUpdater.stop();
       freeFStream();
     }
     final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
@@ -421,7 +431,7 @@ class BassPlayer implements OutputModeOperations {
       );
     }
     _playerStateStreamController.add(playerState);
-    _positionUpdater = _getPositionUpdater();
+    _positionUpdater.start();
   }
 
   void _startWasapiExclusive() {
@@ -445,7 +455,7 @@ class BassPlayer implements OutputModeOperations {
 
   @override
   void disposeWasapi() {
-    _positionUpdater?.cancel();
+    _positionUpdater.stop();
     _bassWasapi.BASS_WASAPI_Stop(BASS.FALSE);
     _bassWasapi.BASS_WASAPI_Free();
     _wasapiInitialized = false;
@@ -469,19 +479,18 @@ class BassPlayer implements OutputModeOperations {
               "handle is a decoding channel, so cannot be played.");
         case BASS.BASS_ERROR_START:
           _startDevice();
-          start();
-          break;
+          return start();
       }
     }
 
     _playerStateStreamController.add(playerState);
-    _positionUpdater = _getPositionUpdater();
+    _positionUpdater.start();
   }
 
   void _pause_wasapiExclusive() {
     if (_bassWasapi.BASS_WASAPI_Stop(BASS.FALSE) == BASS.TRUE) {
       _playerStateStreamController.add(playerState);
-      _positionUpdater?.cancel();
+      _positionUpdater.stop();
     }
   }
 
@@ -508,7 +517,7 @@ class BassPlayer implements OutputModeOperations {
     }
 
     _playerStateStreamController.add(playerState);
-    _positionUpdater?.cancel();
+    _positionUpdater.stop();
   }
 
   /// set channel's position to given [position]
@@ -565,6 +574,7 @@ class BassPlayer implements OutputModeOperations {
   ///
   /// Also free the bass.dll.
   void free() {
+    _positionUpdater.stop();
     if (_wasapiInitialized || wasapiExclusive) disposeWasapi();
 
     if (_bass.BASS_Free() == 0) {
@@ -581,7 +591,6 @@ class BassPlayer implements OutputModeOperations {
     _bassWasapiLib.close();
     _bassLib.close();
 
-    _positionUpdater?.cancel();
     _playerStateStreamController.close();
     _positionStreamController.close();
   }

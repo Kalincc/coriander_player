@@ -12,6 +12,37 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   setUpAll(() => RustLib.initMock(api: _TestRustLibApi()));
 
+  testWidgets('theme changes keep the same lyric search request',
+      (tester) async {
+    var searches = 0;
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final mode = ValueNotifier(ThemeMode.light);
+    await tester.pumpWidget(ValueListenableBuilder<ThemeMode>(
+      valueListenable: mode,
+      builder: (_, value, __) => MaterialApp(
+          navigatorKey: navigatorKey,
+          theme: ThemeData.light(),
+          darkTheme: ThemeData.dark(),
+          themeMode: value,
+          home: const SizedBox()),
+    ));
+    unawaited(showLyricSourceDialog(
+      navigator: navigatorKey.currentState!,
+      audio: Audio('', '', '', 0, 0, null, null, 'song', 0, 0, null),
+      search: (_) async {
+        searches++;
+        return const OnlineLyricSearchReport(candidates: [], statuses: []);
+      },
+    ));
+    await tester.pumpAndSettle();
+    mode.value = ThemeMode.dark;
+    await tester.pumpAndSettle();
+    expect(searches, 1);
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    mode.dispose();
+  });
+
   testWidgets(
       'opens the lyric source dialog after the transient controls unmount',
       (tester) async {
