@@ -57,6 +57,9 @@ jobs:
       - name: Check Rust library
         run: cargo check --manifest-path rust/Cargo.toml
 
+      - name: Run Rust metadata and lyric regression tests
+        run: cargo test --manifest-path rust/Cargo.toml --lib
+
       - name: Test release helpers
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/release_helpers_test.ps1
