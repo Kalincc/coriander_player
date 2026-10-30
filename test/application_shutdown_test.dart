@@ -6,6 +6,64 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('a blocked diagnostic writer cannot hold the window open',
+      (tester) async {
+    var closed = false;
+    final never = Completer<void>();
+    final shutdown = ApplicationShutdown(
+      savePlaylists: () async {},
+      saveLyricSources: () async {},
+      saveSettings: () async {},
+      savePreferences: () async {},
+      closePlayback: () {},
+      unregisterHotkeys: () async {},
+      closeWindow: () async => closed = true,
+      recordDiagnostics: (_) => never.future,
+    );
+    final closing = shutdown.exitNormally();
+    await tester.pump();
+    expect(closed, isFalse);
+    await tester.pump(const Duration(milliseconds: 100));
+    await closing;
+    expect(closed, isTrue);
+    never.complete();
+  });
+
+  test('independent saves run together but all settle before failure or close',
+      () async {
+    final gates = List.generate(4, (_) => Completer<void>());
+    final started = <int>[];
+    var closed = false;
+    Future<void> save(int index) {
+      started.add(index);
+      return gates[index].future;
+    }
+
+    final shutdown = ApplicationShutdown(
+      savePlaylists: () => save(0),
+      saveLyricSources: () => save(1),
+      saveSettings: () => save(2),
+      savePreferences: () => save(3),
+      closePlayback: () => closed = true,
+      unregisterHotkeys: () async {},
+      closeWindow: () async {},
+    );
+    var completed = false;
+    final exiting = shutdown.exitNormally();
+    final failure = expectLater(exiting, throwsStateError);
+    exiting.then((_) => completed = true, onError: (_) => completed = true);
+    expect(started, [0, 1, 2, 3]);
+    gates[0].completeError(StateError('write failure'));
+    await Future<void>.delayed(Duration.zero);
+    expect(completed, isFalse);
+    expect(closed, isFalse);
+    for (final gate in gates.skip(1)) {
+      gate.complete();
+    }
+    await failure;
+    expect(closed, isFalse);
+  });
+
   test('production shutdown is shared by normal and update exits', () {
     expect(ApplicationShutdown.production(),
         same(ApplicationShutdown.production()));
@@ -44,7 +102,7 @@ void main() {
     );
 
     await expectLater(shutdown.exitNormally(), throwsA(isA<StateError>()));
-    expect(events, ['playlists', 'lyrics']);
+    expect(events, ['playlists', 'lyrics', 'settings', 'preferences']);
   });
 
   test('can close after a successful update handoff', () async {
@@ -76,7 +134,7 @@ void main() {
 
     final first = shutdown.exitNormally();
     final second = shutdown.exitNormally();
-    expect(events, ['playlists']);
+    expect(events, ['playlists', 'lyrics', 'settings', 'preferences']);
     saved.complete();
     await Future.wait([first, second]);
     await shutdown.exitNormally();
@@ -102,13 +160,16 @@ void main() {
     });
 
     await expectLater(shutdown.exitNormally(), throwsStateError);
-    expect(events, ['playlists']);
+    expect(events, ['playlists', 'lyrics', 'settings', 'preferences']);
     fail = false;
     await shutdown.exitNormally();
     await shutdown.exitNormally();
 
     expect(events, [
       'playlists',
+      'lyrics',
+      'settings',
+      'preferences',
       'playlists',
       'lyrics',
       'settings',
@@ -270,7 +331,7 @@ void main() {
 
     final saving = shutdown.saveUserState();
     final closing = shutdown.closeAfterUpdateHandoff();
-    expect(events, ['playlists']);
+    expect(events, ['playlists', 'lyrics', 'settings', 'preferences']);
     saved.complete();
     await Future.wait([saving, closing]);
 

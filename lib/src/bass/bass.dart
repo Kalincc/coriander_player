@@ -110,6 +110,20 @@ class Bass {
           lookup)
       : _lookup = lookup;
 
+  double BASS_GetCPU() => _BASS_GetCPU();
+  late final _BASS_GetCPU =
+      _lookup<ffi.NativeFunction<ffi.Float Function()>>('BASS_GetCPU')
+          .asFunction<double Function()>();
+
+  int BASS_ChannelGetData(
+          int handle, ffi.Pointer<ffi.Void> buffer, int length) =>
+      _BASS_ChannelGetData(handle, buffer, length);
+  late final _BASS_ChannelGetData = _lookup<
+          ffi.NativeFunction<
+              DWORD Function(
+                  DWORD, ffi.Pointer<ffi.Void>, DWORD)>>('BASS_ChannelGetData')
+      .asFunction<int Function(int, ffi.Pointer<ffi.Void>, int)>();
+
   int BASS_Start() {
     return _BASS_Start();
   }

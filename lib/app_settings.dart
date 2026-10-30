@@ -207,41 +207,49 @@ class AppSettings {
     }
   }
 
+  Future<void> _settingsSaveChain = Future.value();
+
   Future<void> saveSettings({bool rethrowOnError = false}) async {
+    final write = _settingsSaveChain.then((_) => _writeSettings());
+    _settingsSaveChain = write.catchError((_) {});
     try {
-      final isMaximized = await windowManager.isMaximized();
-      final isFullScreen = await windowManager.isFullScreen();
-      final settingsMap = {
-        "Version": version,
-        "ThemeMode": themeMode == ThemeMode.dark,
-        "DynamicTheme": dynamicTheme,
-        "UseSystemTheme": useSystemTheme,
-        "UseSystemThemeMode": useSystemThemeMode,
-        "DefaultTheme": defaultTheme,
-        "ArtistSeparator": artistSeparator,
-        "LocalLyricFirst": localLyricFirst,
-        "IsWindowMaximized": isMaximized,
-        "FontFamily": fontFamily,
-        "FontPath": fontPath,
-      };
-
-      // 只有在窗口不是最大化且不是全屏时才保存窗口尺寸
-      // 这样windowSize始终保存的是窗口化时的尺寸
-      Size sizeToSave = windowSize;
-      if (!isMaximized && !isFullScreen) {
-        sizeToSave = await windowManager.getSize();
-      }
-      settingsMap["WindowSize"] =
-          "${sizeToSave.width.toStringAsFixed(1)},${sizeToSave.height.toStringAsFixed(1)}";
-
-      final settingsStr = json.encode(settingsMap);
-      final supportPath = (await getAppDataDir()).path;
-      final settingsPath = "$supportPath\\settings.json";
-      final output = await File(settingsPath).create(recursive: true);
-      output.writeAsStringSync(settingsStr);
+      await write;
     } catch (err, trace) {
       LOGGER.e(err, stackTrace: trace);
       if (rethrowOnError) rethrow;
     }
+  }
+
+  Future<void> _writeSettings() async {
+    final isMaximized = await windowManager.isMaximized();
+    final isFullScreen = await windowManager.isFullScreen();
+    final settingsMap = {
+      "Version": version,
+      "ThemeMode": themeMode == ThemeMode.dark,
+      "DynamicTheme": dynamicTheme,
+      "UseSystemTheme": useSystemTheme,
+      "UseSystemThemeMode": useSystemThemeMode,
+      "DefaultTheme": defaultTheme,
+      "ArtistSeparator": artistSeparator,
+      "LocalLyricFirst": localLyricFirst,
+      "IsWindowMaximized": isMaximized,
+      "FontFamily": fontFamily,
+      "FontPath": fontPath,
+    };
+
+    // 只有在窗口不是最大化且不是全屏时才保存窗口尺寸
+    // 这样windowSize始终保存的是窗口化时的尺寸
+    Size sizeToSave = windowSize;
+    if (!isMaximized && !isFullScreen) {
+      sizeToSave = await windowManager.getSize();
+    }
+    settingsMap["WindowSize"] =
+        "${sizeToSave.width.toStringAsFixed(1)},${sizeToSave.height.toStringAsFixed(1)}";
+
+    final settingsStr = json.encode(settingsMap);
+    final supportPath = (await getAppDataDir()).path;
+    final settingsPath = "$supportPath\\settings.json";
+    final output = await File(settingsPath).create(recursive: true);
+    await output.writeAsString(settingsStr);
   }
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/play_service/play_service.dart';
+import 'package:coriander_player/play_service/media_timeline_updater.dart';
 import 'package:coriander_player/play_service/playback_history_service.dart';
 import 'package:coriander_player/play_service/playback_output_mode_message.dart';
 import 'package:coriander_player/src/bass/bass_player.dart';
@@ -105,7 +106,7 @@ class PlaybackService extends ChangeNotifier
     });
 
     _positionStreamSub = positionStream.listen((progress) {
-      _smtc.updateTimeProperties(progress: (progress * 1000).floor());
+      _timeline.update((progress * 1000).floor());
       if (nowPlaying != null && playerState != PlayerState.unknown) {
         _playbackHistoryService?.recordPosition(
           Duration(milliseconds: (progress * 1000).round()),
@@ -116,6 +117,11 @@ class PlaybackService extends ChangeNotifier
 
   final _player = BassPlayer();
   final _smtc = SmtcFlutter();
+  late final _timeline = MediaTimelineUpdater(
+    send: (progress) => _smtc.updateTimeProperties(progress: progress),
+    onError: (error, trace) =>
+        LOGGER.e('[media timeline] $error', stackTrace: trace),
+  );
   final _pref = AppPreference.instance.playbackPref;
   final _playbackRequestGate = PlaybackRequestGate();
 
@@ -201,7 +207,7 @@ class PlaybackService extends ChangeNotifier
         .then((_) async {
       if (_playbackRequestGate.isCurrent(requestGeneration)) {
         // Updating the display recreates the Windows timeline, even when paused.
-        await _smtc.updateTimeProperties(progress: (position * 1000).floor());
+        _timeline.update((position * 1000).floor(), immediate: true);
       }
     }).catchError((Object error, StackTrace trace) {
       LOGGER.e('[refresh media metadata] $error', stackTrace: trace);
@@ -411,6 +417,7 @@ class PlaybackService extends ChangeNotifier
       );
       _endHistorySession();
       _smtc.updateState(state: SMTCState.paused);
+      _timeline.update((_player.position * 1000).floor(), immediate: true);
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
 
@@ -442,6 +449,7 @@ class PlaybackService extends ChangeNotifier
         );
       }
       _smtc.updateState(state: SMTCState.playing);
+      _timeline.update((_player.position * 1000).floor(), immediate: true);
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
 
@@ -468,6 +476,7 @@ class PlaybackService extends ChangeNotifier
 
   void seek(double position) {
     _player.seek(position);
+    _timeline.update((position * 1000).floor(), immediate: true);
     _playbackHistoryService?.recordSeek(
       Duration(milliseconds: (position * 1000).round()),
     );
@@ -484,6 +493,8 @@ class PlaybackService extends ChangeNotifier
   }
 
   void close() {
+    _playbackRequestGate.begin();
+    _timeline.dispose();
     _playbackHistoryService?.recordPosition(
       Duration(milliseconds: (_player.position * 1000).round()),
     );

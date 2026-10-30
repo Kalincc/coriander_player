@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:coriander_player/app_preference.dart';
+import 'package:coriander_player/runtime_diagnostic_log.dart';
 import 'package:coriander_player/src/bass/bass_wasapi.dart' as BASS;
 import 'package:coriander_player/src/bass/output_mode_switch.dart';
 import 'package:coriander_player/utils.dart';
@@ -60,6 +61,52 @@ class PlaybackPositionUpdater {
   }
 }
 
+/// Sampled with the existing progress timer; no extra polling or per-tick logs.
+class PlaybackHealthMonitor {
+  Duration? _lastSample;
+  Duration? _lastAdvance;
+  Duration? _lastReport;
+  double? _lastPosition;
+  PlayerState? _lastState;
+
+  void reset() {
+    _lastSample = _lastAdvance = _lastReport = null;
+    _lastPosition = null;
+    _lastState = null;
+  }
+
+  String? observe(PlayerState state, double position, Duration elapsed) {
+    final reasons = <String>[];
+    final previous = _lastSample;
+    if (previous != null &&
+        _lastState == PlayerState.playing &&
+        elapsed - previous >= const Duration(milliseconds: 250)) {
+      reasons.add('event-loop-gap=${(elapsed - previous).inMilliseconds}ms');
+    }
+    if ((state == PlayerState.stalled || state == PlayerState.pausedDevice) &&
+        state != _lastState) {
+      reasons.add('state=${state.name}');
+    }
+    if (state != PlayerState.playing ||
+        _lastState != PlayerState.playing ||
+        position != _lastPosition) {
+      _lastAdvance = elapsed;
+    } else if (elapsed - _lastAdvance! >= const Duration(milliseconds: 500)) {
+      reasons.add('position-not-advancing');
+    }
+    _lastSample = elapsed;
+    _lastPosition = position;
+    _lastState = state;
+    if (reasons.isEmpty ||
+        (_lastReport != null &&
+            elapsed - _lastReport! < const Duration(seconds: 5))) {
+      return null;
+    }
+    _lastReport = elapsed;
+    return reasons.join(', ');
+  }
+}
+
 class BassPlayer implements OutputModeOperations {
   late final ffi.DynamicLibrary _bassLib;
   late final ffi.DynamicLibrary _bassWasapiLib;
@@ -72,6 +119,8 @@ class BassPlayer implements OutputModeOperations {
   /// 是否启用 wasapi 独占模式
   bool wasapiExclusive = false;
   bool _wasapiInitialized = false;
+  final _healthClock = Stopwatch()..start();
+  final _health = PlaybackHealthMonitor();
 
   late final _positionUpdater = PlaybackPositionUpdater(_updatePosition);
   final _positionStreamController = StreamController<double>.broadcast();
@@ -143,8 +192,26 @@ class BassPlayer implements OutputModeOperations {
       _playerStateStreamController.stream;
 
   void _updatePosition() {
-    _positionStreamController.add(position);
-    if (playerState == PlayerState.stopped) {
+    final progress = position;
+    final state = playerState;
+    final anomaly = _health.observe(state, progress, _healthClock.elapsed);
+    if (anomaly != null) {
+      // BASS_DATA_AVAILABLE = 0 queries without consuming audio. Decoding
+      // channels (exclusive mode) have no playback buffer, so never query them.
+      final bytes = wasapiExclusive || _fstream == null
+          ? null
+          : _bass.BASS_ChannelGetData(_fstream!, ffi.nullptr, 0);
+      final message = '[playback health] $anomaly; state=${state.name}; '
+          'mode=${wasapiExclusive ? "exclusive" : "shared"}; '
+          'position=${progress.toStringAsFixed(3)}s; '
+          'bufferBytes=${bytes == 0xffffffff ? "unavailable" : bytes}; '
+          'bassLoad=${_bass.BASS_GetCPU().toStringAsFixed(1)}%; '
+          'file=${path.basename(_fPath ?? "")}';
+      LOGGER.w(message);
+      unawaited(RuntimeDiagnosticLog.instance.record(message));
+    }
+    _positionStreamController.add(progress);
+    if (state == PlayerState.stopped) {
       _positionUpdater.stop();
       _playerStateStreamController.add(PlayerState.completed);
     }
@@ -310,6 +377,7 @@ class BassPlayer implements OutputModeOperations {
   /// if setSource has been called once,
   /// it will pause current channel and free current stream.
   void setSource(String path) {
+    _health.reset();
     if (_wasapiInitialized) disposeWasapi();
     if (_fstream != null) {
       _positionUpdater.stop();
@@ -431,6 +499,7 @@ class BassPlayer implements OutputModeOperations {
       );
     }
     _playerStateStreamController.add(playerState);
+    _health.reset();
     _positionUpdater.start();
   }
 
@@ -484,6 +553,7 @@ class BassPlayer implements OutputModeOperations {
     }
 
     _playerStateStreamController.add(playerState);
+    _health.reset();
     _positionUpdater.start();
   }
 
@@ -499,6 +569,7 @@ class BassPlayer implements OutputModeOperations {
   /// do nothing if [setSource] hasn't been called
   void pause() {
     if (_fstream == null) return;
+    _health.reset();
 
     if (wasapiExclusive) {
       return _pause_wasapiExclusive();
@@ -526,6 +597,7 @@ class BassPlayer implements OutputModeOperations {
   /// do nothing if [setSource] hasn't been called
   void seek(double position) {
     if (_fstream == null) return;
+    _health.reset();
 
     if (_bass.BASS_ChannelSetPosition(
           _fstream!,

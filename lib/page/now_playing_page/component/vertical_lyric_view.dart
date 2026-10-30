@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
 import 'package:coriander_player/lyric/lyric_timing.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_controls.dart';
@@ -118,9 +117,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
   bool _centerScheduled = false;
   Size? _lastViewportSize;
 
-  List<LyricViewTile> lyricTiles = [
-    LyricViewTile(line: LrcLine.defaultLine, opacity: 1.0)
-  ];
+  int _currentLine = 0;
 
   /// 用来定位到当前歌词
   final currentLyricTileKey = GlobalKey();
@@ -132,6 +129,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     _initLyricView();
     lyricLineStreamSubscription =
         lyricService.lyricLineStream.listen(_updateNextLyricLine);
+  }
+
+  @override
+  void didUpdateWidget(covariant _VerticalLyricScrollView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.lyric, widget.lyric)) _initLyricView();
   }
 
   @override
@@ -159,7 +162,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
 
   /// 加载当前歌词页面，获取并滚动到当前歌词行的位置
   void _initLyricView() {
-    final currentLine = lyricLineIndexAt(
+    _currentLine = lyricLineIndexAt(
       widget.lyric.lines,
       Duration(
         microseconds:
@@ -167,8 +170,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
       ),
       lyricService.lyricOffset,
     );
-    lyricTiles = _generateLyricTiles(currentLine);
-
     _scheduleCurrentLyricCenter();
   }
 
@@ -179,35 +180,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     );
     playbackService.seek(target.inMilliseconds / 1000);
     setState(() {
-      lyricTiles = _generateLyricTiles(i);
+      _currentLine = i;
     });
     _scheduleCurrentLyricCenter();
   }
 
-  /// 当前歌词行100%不透明度，其他歌词行18%透明度
-  /// 把[currentLyricTileKey]绑在当前歌词行上
-  List<LyricViewTile> _generateLyricTiles(int mainLine) {
-    return List.generate(
-      widget.lyric.lines.length,
-      (i) {
-        double opacity = 1.0;
-        if ((mainLine >= 1 && i <= mainLine - 1) ||
-            (mainLine < widget.lyric.lines.length - 1 && i >= mainLine + 1)) {
-          opacity = 0.18;
-        }
-        return LyricViewTile(
-          key: i == mainLine ? currentLyricTileKey : null,
-          line: widget.lyric.lines[i],
-          opacity: opacity,
-          onTap: () => _seekToLyricLine(i),
-        );
-      },
-    );
-  }
-
   void _updateNextLyricLine(int lyricLine) {
-    lyricTiles = _generateLyricTiles(lyricLine);
-    setState(() {});
+    if (_currentLine != lyricLine) setState(() => _currentLine = lyricLine);
 
     _scheduleCurrentLyricCenter();
   }
@@ -228,9 +207,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
           slivers: [
             const SliverFillRemaining(),
             SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: lyricTiles,
+              child: LyricTileList(
+                lyric: widget.lyric,
+                currentLine: _currentLine,
+                currentTileKey: currentLyricTileKey,
+                onTap: _seekToLyricLine,
               ),
             ),
             const SliverFillRemaining(),
@@ -247,4 +228,61 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     scrollController.dispose();
     super.dispose();
   }
+}
+
+/// Retains unchanged row widgets when only the highlighted lyric line changes.
+class LyricTileList extends StatefulWidget {
+  const LyricTileList({
+    super.key,
+    required this.lyric,
+    required this.currentLine,
+    required this.currentTileKey,
+    required this.onTap,
+  });
+
+  final Lyric lyric;
+  final int currentLine;
+  final GlobalKey currentTileKey;
+  final ValueChanged<int> onTap;
+
+  @override
+  State<LyricTileList> createState() => _LyricTileListState();
+}
+
+class _LyricTileListState extends State<LyricTileList> {
+  late List<LyricViewTile> _tiles;
+
+  LyricViewTile _tile(int index) => LyricViewTile(
+        key: index == widget.currentLine ? widget.currentTileKey : null,
+        line: widget.lyric.lines[index],
+        opacity: index == widget.currentLine ? 1 : .18,
+        onTap: () => widget.onTap(index),
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    _tiles = List.generate(widget.lyric.lines.length, _tile);
+  }
+
+  @override
+  void didUpdateWidget(covariant LyricTileList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.lyric, widget.lyric) ||
+        oldWidget.currentTileKey != widget.currentTileKey) {
+      _tiles = List.generate(widget.lyric.lines.length, _tile);
+    } else if (oldWidget.currentLine != widget.currentLine) {
+      // A fresh child list is required by Flutter; reuse every unchanged widget.
+      _tiles = List.of(_tiles);
+      for (final index in [oldWidget.currentLine, widget.currentLine]) {
+        if (index >= 0 && index < _tiles.length) _tiles[index] = _tile(index);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _tiles,
+      );
 }

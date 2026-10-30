@@ -14,6 +14,30 @@ Future<ImageProvider?> request(ArtworkCache cache, String path,
         height: width);
 
 void main() {
+  test(
+      'distinct covers have bounded decoding and pending reads stay deduplicated',
+      () async {
+    final gates = <Completer<ImageProvider?>>[];
+    final cache = ArtworkCache(
+      capacity: 1,
+      maxConcurrentLoads: 2,
+      load: (_, __, ___) {
+        final gate = Completer<ImageProvider?>();
+        gates.add(gate);
+        return gate.future;
+      },
+    );
+    final pending = [for (var i = 0; i < 6; i++) request(cache, '$i.flac')];
+    expect(gates, hasLength(2));
+    expect(request(cache, '0.flac'), same(pending.first));
+    for (var i = 0; i < 6; i++) {
+      gates[i].complete(null);
+      await pending[i];
+      expect(gates.length, lessThanOrEqualTo(i + 3));
+    }
+    expect(await Future.wait(pending), everyElement(isNull));
+  });
+
   test('LRU evicts old entries rather than retaining covers for every song',
       () async {
     var reads = 0;
@@ -54,6 +78,23 @@ void main() {
     await expectLater(request(cache, 'retry.flac'), throwsStateError);
     expect(await request(cache, 'retry.flac'), isNull);
     expect(await request(cache, 'retry.flac'), isNull);
+    expect(reads, 2);
+  });
+
+  test('a failed decoder releases its slot to a queued request', () async {
+    final blocked = Completer<ImageProvider?>();
+    var reads = 0;
+    final cache = ArtworkCache(
+      maxConcurrentLoads: 1,
+      load: (_, __, ___) => ++reads == 1 ? blocked.future : Future.value(null),
+    );
+    final first = request(cache, 'bad.flac');
+    final failed = expectLater(first, throwsStateError);
+    final second = request(cache, 'good.flac');
+    expect(reads, 1);
+    blocked.completeError(StateError('decode failed'));
+    await failed;
+    expect(await second, isNull);
     expect(reads, 2);
   });
 

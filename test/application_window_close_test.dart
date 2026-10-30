@@ -54,7 +54,7 @@ void main() {
     expect(
         calls.where((call) => call.method == 'setPreventClose'), hasLength(1));
     expect(calls.first.arguments, {'isPreventClose': true});
-    expect(events, ['playlists']);
+    expect(events, ['playlists', 'lyrics', 'settings', 'preferences']);
     expect(calls.where((call) => call.method == 'destroy'), isEmpty);
 
     saved.complete();
@@ -97,7 +97,7 @@ void main() {
 
     await emitNativeClose(tester);
     await tester.pump();
-    expect(events, ['playlists']);
+    expect(events, ['playlists', 'lyrics', 'settings', 'preferences']);
     expect(find.text('保存数据失败，播放器未退出。'), findsOneWidget);
 
     fail = false;
@@ -105,6 +105,9 @@ void main() {
     await tester.pump();
     expect(events, [
       'playlists',
+      'lyrics',
+      'settings',
+      'preferences',
       'playlists',
       'lyrics',
       'settings',
