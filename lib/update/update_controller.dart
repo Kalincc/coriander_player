@@ -208,6 +208,7 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
         )));
     Directory? temporaryDirectory;
     var installerStarted = false;
+    var installationAttempted = false;
 
     try {
       temporaryDirectory = await _createTemporaryDirectory();
@@ -232,12 +233,25 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
       await _shutdown.saveUserState();
       if (!_isCurrent(generation)) return;
 
+      installationAttempted = true;
       await _installer.start(
         installer: verified.installer,
         log: verified.installLog,
       );
       installerStarted = true;
       await _shutdown.closeAfterUpdateHandoff();
+    } on UpdateInstallerException catch (error, stackTrace) {
+      if (_isCurrent(generation)) {
+        LOGGER.e(error, stackTrace: stackTrace);
+        _setState(UpdateFailed(
+          '安装器未能正常启动，播放器未退出。\n$error\n'
+          '${error.processMayBeRunning ? "安装器仍可能运行，请先检查或关闭它，避免重复启动。\n" : ""}'
+          '已保留安装包目录：${temporaryDirectory?.path}\n'
+          '安装日志（若已生成）：${error.log.path}',
+          canRetry: !error.processMayBeRunning,
+          releasePageUri: candidate.releasePageUri,
+        ));
+      }
     } on UpdateCancelledException {
       if (_isCurrent(generation)) _setState(const UpdateCancelled());
     } on UpdateHashMismatchException {
@@ -259,7 +273,9 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
         _setState(const UpdateFailed('更新失败，请重试。', canRetry: true));
       }
     } finally {
-      if (!installerStarted && temporaryDirectory != null) {
+      if (!installerStarted &&
+          !installationAttempted &&
+          temporaryDirectory != null) {
         try {
           await _cleanupTemporaryDirectory(temporaryDirectory);
         } catch (error, stackTrace) {

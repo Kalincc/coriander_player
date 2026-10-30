@@ -48,7 +48,75 @@ void main() {
 
     expect(controller.state, isA<UpdateFailed>());
     expect(events, isNot(contains('close')));
-    expect(cleanupCalls, 1);
+    expect(cleanupCalls, 0);
+    controller.dispose();
+  });
+
+  test('confirmed startup failure retains the window and verified files',
+      () async {
+    final events = <String>[];
+    var cleaned = false;
+    final controller = controllerFixture(
+      installed: true,
+      events: events,
+      launchError: UpdateInstallerException(
+        '安装器启动后立即退出',
+        log: File('install.log'),
+        exitCode: 1,
+      ),
+      cleanup: (_) async => cleaned = true,
+    );
+    await controller.check();
+    await controller.install();
+    final state = controller.state as UpdateFailed;
+    expect(state.message, contains('播放器未退出'));
+    expect(state.message, contains('退出码 1'));
+    expect(state.message, contains('install.log'));
+    expect(state.releasePageUri, _candidate.releasePageUri);
+    expect(state.canRetry, isTrue);
+    expect(events, isNot(contains('close')));
+    expect(cleaned, isFalse);
+    controller.dispose();
+  });
+
+  test('the window stays open until installer startup is confirmed', () async {
+    final events = <String>[];
+    final ready = Completer<void>();
+    final controller = controllerFixture(
+      installed: true,
+      events: events,
+      installerGate: ready,
+    );
+    await controller.check();
+    final installing = controller.install();
+    while (!events.contains('launch')) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(events, isNot(contains('close')));
+    ready.complete();
+    await installing;
+    expect(events.last, 'close');
+    controller.dispose();
+  });
+
+  test('uncertain startup does not offer an immediate duplicate install',
+      () async {
+    final events = <String>[];
+    var cleaned = false;
+    final controller = controllerFixture(
+      installed: true,
+      events: events,
+      launchError: UpdateInstallerException('启动超时',
+          log: File('install.log'), processMayBeRunning: true),
+      cleanup: (_) async => cleaned = true,
+    );
+    await controller.check();
+    await controller.install();
+    final failure = controller.state as UpdateFailed;
+    expect(failure.canRetry, isFalse);
+    expect(failure.message, contains('避免重复启动'));
+    expect(events, isNot(contains('close')));
+    expect(cleaned, isFalse);
     controller.dispose();
   });
 
@@ -214,6 +282,7 @@ UpdateController controllerFixture({
   bool noUpdate = false,
   Object? saveError,
   Object? launchError,
+  Completer<void>? installerGate,
   Future<void> Function(Directory directory)? cleanup,
   Future<VerifiedUpdate> Function(
     UpdateCandidate candidate,
@@ -252,7 +321,7 @@ UpdateController controllerFixture({
           );
         },
   );
-  final installer = _FakeInstaller(events, launchError);
+  final installer = _FakeInstaller(events, launchError, gate: installerGate);
   final shutdown = _FakeShutdown(events, saveError);
   return UpdateController(
     service: service,
@@ -358,15 +427,16 @@ class _FakeDownloader extends UpdateDownloader {
 }
 
 class _FakeInstaller extends UpdateInstaller {
-  _FakeInstaller(this.events, this.error)
-      : super(startDetached: (_, __) async {});
+  _FakeInstaller(this.events, this.error, {this.gate});
 
   final List<String> events;
   final Object? error;
+  final Completer<void>? gate;
 
   @override
   Future<void> start({required File installer, required File log}) async {
     events.add('launch');
+    await gate?.future;
     if (error != null) throw error!;
   }
 }
