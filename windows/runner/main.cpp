@@ -39,6 +39,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::DispatchMessage(&msg);
   }
 
+  // window_manager.destroy() posts WM_QUIT without destroying the window.
+  // Clear the controller via OnDestroy before its destructor can reenter the
+  // window procedure with an already-destroyed view, and before COM teardown.
+  window.Destroy();
   ::CoUninitialize();
   return EXIT_SUCCESS;
 }

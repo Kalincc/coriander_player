@@ -68,8 +68,11 @@ scoop install jin/coriander_player
 - 播放器自身的进度及逐字歌词仍按约 33 毫秒刷新；Windows 系统媒体进度改为约每秒同步一次，只保留最新待同步位置，最多一个调用在途。暂停、恢复、拖动进度和歌曲元数据刷新时会请求立即同步。
 - 歌词换行只重新生成原高亮行和新高亮行，保留其余歌词行控件；滚动布局和点击歌词跳转行为不变。
 - 退出前仍等待听歌历史写入成功，再并行保存歌单、歌词来源、设置和偏好；任何保存失败均不会强制退出。设置写入异步串行化，避免阻塞界面或重叠覆盖。
+- Windows 消息循环结束后显式销毁 Flutter 窗口与引擎，再释放 COM，避免直接收到 `WM_QUIT` 时在对象析构中向已销毁的视图转发窗口消息；销毁期间的字体变更消息也会检查控制器是否仍存在。
 - 播放异常（事件循环长停顿、播放位置不前进、缓冲停滞、设备暂停）及退出阶段耗时写入 `Documents\coriander_player\runtime_diagnostics.log`。正常进度不写日志，播放异常最多每 5 秒记录一次；日志超过约 256 KiB 后轮换为 `runtime_diagnostics.previous.log`。日志仅保存在本机，不会自动上传，可能包含歌曲文件名；诊断写入失败不会影响播放，退出最多等待诊断写入 100 毫秒。
 - 界面停顿、缓冲不足及驱动中断并非同一种故障。上述改动不修改音频采样率、音量处理或现有缓冲参数，也不能代替真实设备上的连续播放验证；若仍有断音，请保留发生时刻及诊断日志。
+
+Windows 开发环境可运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/windows_shutdown_test.ps1`：测试直接编译生产 Windows runner，使用独立的最小 Dart 界面和 Flutter debug 引擎，分别重复发送 `WM_QUIT` 和 `WM_CLOSE`，要求退出码为 0 且退出阶段不超过 2 秒。它不加载播放器服务或用户数据，不代表完整 Release 安装包的实测；临时文件保留在 `build/shutdown-probe-*`，同一测试也在发布构建中执行。
 
 ## 其他平台支持
 - MacOS: [https://github.com/marscey/coriander_player/tree/macos-platform](https://github.com/marscey/coriander_player/tree/macos-platform)

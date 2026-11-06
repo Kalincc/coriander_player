@@ -6,7 +6,7 @@ on:
       release_tag:
         description: Version used for a validation build (does not publish)
         required: true
-        default: v1.5.1-kalin.17
+        default: v1.5.1-kalin.18
   push:
     tags:
       - 'v*-kalin.*'
@@ -53,6 +53,10 @@ jobs:
 
       - name: Analyze application sources
         run: flutter analyze --no-fatal-infos lib test
+
+      - name: Test native Windows shutdown
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/windows_shutdown_test.ps1
 
       - name: Check Rust library
         run: cargo check --manifest-path rust/Cargo.toml
