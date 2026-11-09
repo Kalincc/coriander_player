@@ -83,6 +83,7 @@ ListeningReport buildListeningReport(
   final songs = <String, _RankTotal>{};
   final artists = <String, _RankTotal>{};
   final albums = <String, _RankTotal>{};
+  final albumKeys = <(String, String), String>{};
   var totalListened = Duration.zero;
   var qualifiedPlayCount = 0;
 
@@ -98,12 +99,20 @@ ListeningReport buildListeningReport(
       audio?.title.trim().isNotEmpty == true ? audio!.title : event.path,
       event.listened,
     );
+  }
+
+  // All events for a path share the same artist and album in this snapshot.
+  for (final song in songs.values) {
+    final audio = metadata[song.key];
     if (audio == null) continue;
     if (audio.artist.trim().isNotEmpty) {
-      _add(artists, audio.artist, audio.artist, event.listened);
+      _add(artists, audio.artist, audio.artist, song.listened,
+          count: song.playCount);
     }
     if (audio.album.trim().isNotEmpty) {
-      _add(albums, audio.albumKey, audio.album, event.listened);
+      final albumKey = albumKeys.putIfAbsent(
+          (audio.album, audio.effectiveAlbumArtist), () => audio.albumKey);
+      _add(albums, albumKey, audio.album, song.listened, count: song.playCount);
     }
   }
 
@@ -123,24 +132,16 @@ void _add(
   Map<String, _RankTotal> totals,
   String key,
   String name,
-  Duration listened,
-) {
+  Duration listened, {
+  int count = 1,
+}) {
   final total = totals.putIfAbsent(key, () => _RankTotal(key, name));
-  total.playCount += 1;
+  total.playCount += count;
   total.listened += listened;
 }
 
 List<ListeningRank> _topTen(Iterable<_RankTotal> totals) {
-  final ranks = totals
-      .map(
-        (total) => ListeningRank(
-          key: total.key,
-          name: total.name,
-          playCount: total.playCount,
-          listened: total.listened,
-        ),
-      )
-      .toList()
+  final ranks = totals.toList()
     ..sort((a, b) {
       final byDuration = b.listened.compareTo(a.listened);
       if (byDuration != 0) return byDuration;
@@ -150,7 +151,12 @@ List<ListeningRank> _topTen(Iterable<_RankTotal> totals) {
       if (byName != 0) return byName;
       return a.key.compareTo(b.key);
     });
-  return List.unmodifiable(ranks.take(10));
+  return List.unmodifiable(ranks.take(10).map((total) => ListeningRank(
+        key: total.key,
+        name: total.name,
+        playCount: total.playCount,
+        listened: total.listened,
+      )));
 }
 
 class _RankTotal {

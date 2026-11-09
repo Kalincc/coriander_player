@@ -2,7 +2,23 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:path/path.dart' as path;
 import 'package:win32/win32.dart' as win32;
+
+const updateHandoffExecutable = 'coriander_update_handoff.exe';
+
+File handoffReadyFile(File log) => File('${log.path}.ready');
+File handoffCancelFile(File log) => File('${log.path}.cancel');
+
+List<String> updateInstallerArguments(File log) => [
+      '/VERYSILENT',
+      '/SUPPRESSMSGBOXES',
+      '/NORESTART',
+      '/CLOSEAPPLICATIONS',
+      '/CORIANDERAPPUPDATE=1',
+      // Dart quotes argument-list items itself, including paths with spaces.
+      '/LOG=${log.path}',
+    ];
 
 typedef DetachedProcessStarter = Future<int> Function(
   String executable,
@@ -38,54 +54,49 @@ Future<int> startDetachedProcess(
   return process.pid;
 }
 
-/// Confirms startup, not installation success. Do not parse Inno's localized,
-/// version-dependent log text; require a nonempty log and a short alive period.
-Future<void> waitForInstallerStartup({
+/// Acknowledgement means the helper holds the old process handle.
+Future<void> waitForHandoffReady({
   required File log,
   required int? Function() readExitCode,
   Duration timeout = const Duration(seconds: 15),
-  Duration settleTime = const Duration(milliseconds: 500),
   Duration pollInterval = const Duration(milliseconds: 100),
 }) async {
   final watch = Stopwatch()..start();
-  Duration? logObservedAt;
+  final ready = handoffReadyFile(log);
   void checkExit() {
     final code = readExitCode();
     if (code != null) {
-      throw UpdateInstallerException('安装器启动后已退出', log: log, exitCode: code);
+      throw UpdateInstallerException('更新助手提前退出', log: log, exitCode: code);
     }
   }
 
   while (watch.elapsed < timeout) {
     checkExit();
-    if (await log.exists() && await log.length() > 0) {
-      logObservedAt ??= watch.elapsed;
-      if (watch.elapsed - logObservedAt >= settleTime) {
-        checkExit();
-        return;
-      }
+    if (await ready.exists() && await ready.length() > 0) {
+      checkExit();
+      return;
     }
     await Future<void>.delayed(pollInterval);
   }
-  throw UpdateInstallerException('等待安装器启动日志超时',
+  throw UpdateInstallerException('等待更新助手确认超时',
       log: log, processMayBeRunning: true);
 }
 
-Future<void> _confirmWindowsInstallerStartup(int pid, File log) async {
+Future<void> _confirmWindowsHandoff(int pid, File log) async {
   // Detached Dart processes intentionally expose no exitCode Future. Hold a
   // Windows handle while observing startup, rather than polling a reusable PID.
   final handle = win32.OpenProcess(
       win32.PROCESS_QUERY_LIMITED_INFORMATION | win32.SYNCHRONIZE, 0, pid);
   if (handle == 0) {
     throw UpdateInstallerException(
-      '安装器已退出或无法监测启动状态（Windows 错误 ${win32.GetLastError()}）',
+      '更新助手已退出或无法监测启动状态（Windows 错误 ${win32.GetLastError()}）',
       log: log,
       processMayBeRunning: true,
     );
   }
   final code = calloc<Uint32>();
   try {
-    await waitForInstallerStartup(
+    await waitForHandoffReady(
         log: log,
         readExitCode: () {
           final status = win32.WaitForSingleObject(handle, 0);
@@ -94,7 +105,7 @@ Future<void> _confirmWindowsInstallerStartup(int pid, File log) async {
               win32.GetExitCodeProcess(handle, code) != 0) {
             return code.value;
           }
-          throw UpdateInstallerException('无法读取安装器状态',
+          throw UpdateInstallerException('无法读取更新助手状态',
               log: log, processMayBeRunning: true);
         });
   } finally {
@@ -107,35 +118,50 @@ class UpdateInstaller {
   UpdateInstaller({
     DetachedProcessStarter? startDetached,
     Future<void> Function(int pid, File log)? confirmStartup,
+    File? helper,
   })  : _startDetached = startDetached ?? startDetachedProcess,
-        _confirmStartup = confirmStartup ?? _confirmWindowsInstallerStartup;
+        _confirmStartup = confirmStartup ?? _confirmWindowsHandoff,
+        _helper = helper;
 
   final DetachedProcessStarter _startDetached;
   final Future<void> Function(int pid, File log) _confirmStartup;
+  final File? _helper;
+
+  Future<void> cancelHandoff(File log) =>
+      handoffCancelFile(log).writeAsString('cancel', flush: true);
 
   Future<void> start({required File installer, required File log}) async {
     var launched = false;
     try {
-      if (await log.exists()) {
-        throw UpdateInstallerException('安装日志已存在，请重新检查更新后重试', log: log);
+      if (await log.exists() ||
+          await handoffReadyFile(log).exists() ||
+          await handoffCancelFile(log).exists()) {
+        throw UpdateInstallerException('更新目录已被使用，请重新检查更新后重试', log: log);
       }
-      final pid = await _startDetached(installer.path, [
-        '/VERYSILENT',
-        '/SUPPRESSMSGBOXES',
-        '/NORESTART',
-        '/CLOSEAPPLICATIONS',
-        '/CORIANDERAPPUPDATE=1',
-        // Process.start quotes Windows argument-list items itself. Embedded
-        // quotes are escaped and Inno would treat the escapes as path characters.
-        '/LOG=${log.path}',
+      final source = _helper ??
+          File(path.join(path.dirname(Platform.resolvedExecutable),
+              updateHandoffExecutable));
+      // The installed helper must not hold its own destination file open.
+      final staged = await source
+          .copy(path.join(installer.parent.path, updateHandoffExecutable));
+      final helperPid = await _startDetached(staged.path, [
+        '$pid',
+        installer.absolute.path,
+        log.absolute.path,
       ]);
       launched = true;
-      await _confirmStartup(pid, log);
-    } on UpdateInstallerException {
-      rethrow;
+      await _confirmStartup(helperPid, log);
     } catch (error) {
-      throw UpdateInstallerException('无法确认安装器启动：$error',
-          log: log, processMayBeRunning: launched);
+      if (launched) {
+        try {
+          await cancelHandoff(log);
+        } catch (cancelError) {
+          throw UpdateInstallerException('无法取消更新交接：$cancelError',
+              log: log, processMayBeRunning: true);
+        }
+      }
+      if (error is UpdateInstallerException) rethrow;
+      throw UpdateInstallerException('无法启动更新助手：$error', log: log);
     }
   }
 }

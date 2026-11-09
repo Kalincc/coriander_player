@@ -49,6 +49,7 @@ try {
     $completeRoot = Join-Path $fixtureRoot 'complete'
     $requiredFiles = @(
         'coriander_player.exe',
+        'coriander_update_handoff.exe',
         'flutter_windows.dll',
         'BASS\bass.dll',
         'BASS\bassape.dll',

@@ -42,24 +42,108 @@ abstract class PlaybackPlaylistController implements Listenable {
   ValueListenable<List<Audio>> get playlist;
   int get playlistIndex;
   void playIndexOfPlaylist(int audioIndex);
+  Object queueItemKey(int index);
+  bool get canUndoQueueEdit;
+  bool moveQueueItem(int oldIndex, int newIndex);
+  bool removeQueueItem(int index);
+  bool clearUpcomingQueue();
+  bool undoQueueEdit();
+}
+
+class _QueueEntry {
+  _QueueEntry(this.id, this.audio);
+  final int id;
+  Audio audio;
 }
 
 class PlaybackPlaylistContext {
-  List<Audio> _items = [];
+  List<_QueueEntry> _items = [];
+  final _undo = <List<_QueueEntry>>[];
+  int _nextId = 0;
   int _currentIndex = 0;
 
-  List<Audio> get items => List.unmodifiable(_items);
+  List<Audio> get items => List.unmodifiable(_items.map((item) => item.audio));
   int get currentIndex => _currentIndex;
+  bool get canUndo => _undo.isNotEmpty;
+  Object itemKey(int index) => _items[index].id;
 
   void play(int audioIndex, Iterable<Audio> playlist) {
-    _items = List<Audio>.from(playlist);
+    _items = [for (final audio in playlist) _QueueEntry(_nextId++, audio)];
+    _undo.clear();
     _currentIndex = audioIndex;
   }
 
+  void selectIndex(int index) {
+    if (index >= 0 && index < _items.length) _currentIndex = index;
+  }
+
+  void _remember() {
+    // Bounded undo; entry IDs distinguish repeated occurrences of one file.
+    if (_undo.length == 20) _undo.removeAt(0);
+    _undo.add(List.of(_items));
+  }
+
+  bool move(int oldIndex, int newIndex) {
+    if (oldIndex < 0 ||
+        oldIndex >= _items.length ||
+        newIndex < 0 ||
+        newIndex > _items.length) {
+      return false;
+    }
+    if (oldIndex < newIndex) newIndex--;
+    if (oldIndex == newIndex) return false;
+    final current = _items[_currentIndex];
+    _remember();
+    final moving = _items.removeAt(oldIndex);
+    _items.insert(newIndex, moving);
+    _currentIndex = _items.indexOf(current);
+    return true;
+  }
+
+  bool remove(int index) {
+    if (index < 0 || index >= _items.length || index == _currentIndex) {
+      return false;
+    }
+    _remember();
+    _items.removeAt(index);
+    if (index < _currentIndex) _currentIndex--;
+    return true;
+  }
+
+  bool clearUpcoming() {
+    if (_items.length <= 1) return false;
+    _remember();
+    _items = [_items[_currentIndex]];
+    _currentIndex = 0;
+    return true;
+  }
+
+  bool insertNext(Audio audio) {
+    if (_items.isEmpty || _items.any((item) => identical(item.audio, audio))) {
+      return false;
+    }
+    _remember();
+    _items.insert(_currentIndex + 1, _QueueEntry(_nextId++, audio));
+    return true;
+  }
+
+  bool undo() {
+    if (_undo.isEmpty || _items.isEmpty) return false;
+    final current = _items[_currentIndex];
+    final restored = _undo.removeLast();
+    // Undo order, not playback: keep a newly inserted song if it is now playing.
+    if (!restored.contains(current)) {
+      restored.insert(_currentIndex.clamp(0, restored.length), current);
+    }
+    _items = restored;
+    _currentIndex = _items.indexOf(current);
+    return true;
+  }
+
   void reconcileLibrary(AudioLibrary library) {
-    _items = _items
-        .map((audio) => library.audioForPath(audio.path) ?? audio)
-        .toList();
+    for (final entry in {..._items, ..._undo.expand((snapshot) => snapshot)}) {
+      entry.audio = library.audioForPath(entry.audio.path) ?? entry.audio;
+    }
   }
 }
 
@@ -166,15 +250,40 @@ class PlaybackService extends ChangeNotifier
   List<Audio> _playlistBackup = [];
   final playbackContext = PlaybackPlaylistContext();
 
+  @override
+  Object queueItemKey(int index) => playbackContext.itemKey(index);
+  @override
+  bool get canUndoQueueEdit => playbackContext.canUndo;
+
+  bool _applyQueueEdit(bool changed) {
+    if (!changed) return false;
+    _playlistIndex = playbackContext.currentIndex;
+    playlist.value = playbackContext.items;
+    // Explicit edits become the new order, including when leaving shuffle mode.
+    _playlistBackup = List.from(playlist.value);
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  bool moveQueueItem(int oldIndex, int newIndex) =>
+      _applyQueueEdit(playbackContext.move(oldIndex, newIndex));
+  @override
+  bool removeQueueItem(int index) =>
+      _applyQueueEdit(playbackContext.remove(index));
+  @override
+  bool clearUpcomingQueue() => _applyQueueEdit(playbackContext.clearUpcoming());
+  @override
+  bool undoQueueEdit() => _applyQueueEdit(playbackContext.undo());
+
   void _replacePlaylist(Iterable<Audio> audios, int currentIndex) {
     playbackContext.play(currentIndex, audios);
-    playlist.value = playbackContext.items;
     _playlistIndex = currentIndex;
+    playlist.value = playbackContext.items;
   }
 
   /// Rebind metadata only: do not reload the decoder, seek or restart history.
   void reconcileLibrary(AudioLibrary library) {
-    playbackContext.play(playlistIndex, playlist.value);
     playbackContext.reconcileLibrary(library);
     playlist.value = playbackContext.items;
     _playlistBackup = _playlistBackup
@@ -269,6 +378,7 @@ class PlaybackService extends ChangeNotifier
       _endHistorySession();
       _player.setSource(audio.path);
       _playlistIndex = audioIndex;
+      playbackContext.selectIndex(audioIndex);
       nowPlaying = audio;
       setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
 
@@ -324,11 +434,8 @@ class PlaybackService extends ChangeNotifier
 
   /// 下一首播放
   void addToNext(Audio audio) {
-    if (_playlistIndex != null && !playlist.value.contains(audio)) {
-      final queue = List<Audio>.from(playlist.value)
-        ..insert(_playlistIndex! + 1, audio);
-      playlist.value = queue;
-      _playlistBackup = List.from(queue);
+    if (_playlistIndex != null) {
+      _applyQueueEdit(playbackContext.insertNext(audio));
     }
   }
 

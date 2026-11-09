@@ -217,6 +217,7 @@ class LyricService extends ChangeNotifier {
     final generation = ++_lyricGeneration;
     currLyricFuture.ignore();
     currLyricFuture = next;
+    _nowPlayingPagePreference.bindAudioPath(_getNowPlaying()?.path);
     currLyricFuture.then((_) {
       if (_disposed || generation != _lyricGeneration) return;
       refreshCurrentLyric();

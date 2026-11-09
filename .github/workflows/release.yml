@@ -6,7 +6,7 @@ on:
       release_tag:
         description: Version used for a validation build (does not publish)
         required: true
-        default: v1.5.1-kalin.18
+        default: v1.5.1-kalin.19
   push:
     tags:
       - 'v*-kalin.*'
@@ -52,7 +52,7 @@ jobs:
         run: flutter test
 
       - name: Analyze application sources
-        run: flutter analyze --no-fatal-infos lib test
+        run: flutter analyze --no-fatal-infos lib test tool
 
       - name: Test native Windows shutdown
         shell: powershell

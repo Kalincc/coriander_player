@@ -13,14 +13,18 @@ typedef AlbumGroupedItemBuilder = Widget Function(
 class AlbumGroupedView extends StatelessWidget {
   const AlbumGroupedView({
     super.key,
-    required this.groups,
+    this.groups = const [],
+    this.albums = const [],
     required this.contentView,
     required this.itemBuilder,
+    this.coverWall = false,
   });
 
   final List<AlbumArtistGroup> groups;
+  final List<Album> albums;
   final ContentView contentView;
   final AlbumGroupedItemBuilder itemBuilder;
+  final bool coverWall;
 
   @override
   Widget build(BuildContext context) {
@@ -29,15 +33,24 @@ class AlbumGroupedView extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           // Match the existing grid delegate's column calculation and spacing.
-          final columns = contentView == ContentView.list
-              ? 1
-              : math.max(
-                  1,
-                  (constraints.maxWidth /
-                          (gridDelegate.maxCrossAxisExtent +
-                              gridDelegate.crossAxisSpacing))
-                      .ceil());
-          final rows = <(AlbumArtistGroup, int?)>[
+          final spacing = coverWall ? 12.0 : gridDelegate.crossAxisSpacing;
+          final columns = coverWall
+              ? math.max(1, (constraints.maxWidth / 200).round())
+              : contentView == ContentView.list
+                  ? 1
+                  : math.max(
+                      1,
+                      (constraints.maxWidth /
+                              (gridDelegate.maxCrossAxisExtent +
+                                  gridDelegate.crossAxisSpacing))
+                          .ceil());
+          final rowHeight = coverWall
+              ? (constraints.maxWidth - spacing * (columns - 1)) / columns +
+                  MediaQuery.textScalerOf(context).scale(52)
+              : gridDelegate.mainAxisExtent;
+          final rows = <(AlbumArtistGroup?, int?)>[
+            for (var start = 0; start < albums.length; start += columns)
+              (null, start),
             for (final group in groups) ...[
               (group, null),
               for (var start = 0; start < group.albums.length; start += columns)
@@ -52,29 +65,30 @@ class AlbumGroupedView extends StatelessWidget {
               itemBuilder: (context, index) {
                 final (group, start) = rows[index];
                 if (start == null) {
+                  final section = group!;
                   return Padding(
                     padding: const EdgeInsets.fromLTRB(8, 20, 8, 8),
                     child: Text(
-                        '${group.artist.name} · ${group.albums.length} 张专辑',
+                        '${section.artist.name} · ${section.albums.length} 张专辑',
                         style: Theme.of(context).textTheme.titleMedium),
                   );
                 }
-                final hasNextRow = start + columns < group.albums.length;
+                final items = group?.albums ?? albums;
+                final hasNextRow = start + columns < items.length;
                 return Padding(
                   padding: EdgeInsets.only(
-                      bottom: hasNextRow && contentView == ContentView.table
-                          ? gridDelegate.mainAxisSpacing
+                      bottom: hasNextRow &&
+                              (coverWall || contentView == ContentView.table)
+                          ? (coverWall ? spacing : gridDelegate.mainAxisSpacing)
                           : 0),
                   child: SizedBox(
-                    height: gridDelegate.mainAxisExtent,
+                    height: rowHeight,
                     child: Row(children: [
                       for (var column = 0; column < columns; column++) ...[
-                        if (column > 0)
-                          SizedBox(width: gridDelegate.crossAxisSpacing),
+                        if (column > 0) SizedBox(width: spacing),
                         Expanded(
-                            child: start + column < group.albums.length
-                                ? itemBuilder(
-                                    context, group.albums[start + column])
+                            child: start + column < items.length
+                                ? itemBuilder(context, items[start + column])
                                 : const SizedBox.shrink()),
                       ],
                     ]),

@@ -77,6 +77,7 @@ if (-not (Test-Path -LiteralPath $playerRelease -PathType Container)) {
     throw "Player Release directory not found: $playerRelease"
 }
 Copy-Item -Path (Join-Path $playerRelease '*') -Destination $stageRoot -Recurse -Force
+Invoke-Checked 'dart' 'compile' 'exe' (Join-Path $repositoryRoot 'tool\update_handoff.dart') '-o' (Join-Path $stageRoot 'coriander_update_handoff.exe')
 
 $desktopLyricSource = Join-Path $workRoot 'desktop_lyric-src'
 Invoke-Checked 'git' 'clone' '--no-checkout' 'https://github.com/Ferry-200/desktop_lyric.git' $desktopLyricSource

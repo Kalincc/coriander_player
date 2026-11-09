@@ -5,7 +5,7 @@ import 'package:coriander_player/lyric/music_match_normalizer.dart';
 
 enum ResultSource { qq, kugou, netease }
 
-enum LyricProviderSearchState { found, noResults, failed, partial }
+enum LyricProviderSearchState { searching, found, noResults, failed, partial }
 
 class LyricProviderSearchStatus {
   final ResultSource source;

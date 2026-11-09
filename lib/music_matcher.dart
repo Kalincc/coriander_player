@@ -8,6 +8,7 @@ import 'package:coriander_player/lyric/qrc.dart';
 import 'package:coriander_player/lyric/music_match_normalizer.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:music_api/music_api.dart';
+import 'package:flutter/foundation.dart';
 
 export 'lyric/online_lyric_models.dart';
 
@@ -33,24 +34,138 @@ Future<OnlineLyricSearchReport> searchOnlineLyrics(
   OnlineLyricCache? cache,
   Duration providerTimeout = const Duration(seconds: 8),
 }) async {
-  final activeProviders =
-      (providers ?? _defaultOnlineLyricProviders).toList(growable: false);
-  final outcomes = await Future.wait(
-    activeProviders
-        .map((provider) => _searchProvider(provider, audio, providerTimeout)),
+  final controller = OnlineLyricSearchController(
+    audio: audio,
+    providers: providers,
+    cache: cache,
+    providerTimeout: providerTimeout,
   );
-  final liveCandidates =
-      _mergeSearchResults(outcomes.expand((outcome) => outcome.rows));
-  final cachedCandidates = await _readCachedCandidates(
-    audio,
-    cache ?? OnlineLyricCache.defaults(),
-  );
-  return OnlineLyricSearchReport(
-    candidates: _mergeCachedCandidates(cachedCandidates, liveCandidates),
-    statuses: [
-      for (final outcome in outcomes) _statusForOutcome(outcome),
-    ],
-  );
+  try {
+    await controller.start();
+    return controller.report;
+  } finally {
+    controller.dispose();
+  }
+}
+
+/// A dialog-owned search: cache first, independent provider updates and retries.
+class OnlineLyricSearchController extends ChangeNotifier {
+  OnlineLyricSearchController({
+    required this.audio,
+    Iterable<OnlineLyricProvider>? providers,
+    OnlineLyricCache? cache,
+    this.providerTimeout = const Duration(seconds: 8),
+  })  : providers = (providers ?? _defaultOnlineLyricProviders).toList(),
+        cache = cache ?? OnlineLyricCache.defaults(),
+        _queryAudio = audio;
+
+  final Audio audio;
+  final List<OnlineLyricProvider> providers;
+  final OnlineLyricCache cache;
+  final Duration providerTimeout;
+  Audio _queryAudio;
+  final _outcomes = <ResultSource, _ProviderSearchOutcome>{};
+  final _statuses = <ResultSource, LyricProviderSearchStatus>{};
+  final _requests = <ResultSource, int>{};
+  List<SongSearchResult> _cached = [];
+  int _generation = 0;
+  bool _disposed = false;
+
+  OnlineLyricSearchReport get report => OnlineLyricSearchReport(
+        candidates: _mergeCachedCandidates(_cached,
+            _mergeSearchResults(_outcomes.values.expand((item) => item.rows))),
+        statuses: List.unmodifiable(_statuses.values),
+      );
+
+  bool get isSearching => _statuses.values
+      .any((item) => item.state == LyricProviderSearchState.searching);
+
+  Object candidateKey(SongSearchResult result) => (
+        _generation,
+        result.source,
+        _requests[result.source],
+        _providerIdFor(result)
+      );
+
+  void cancel() => _generation++;
+
+  Future<void> start({String? title, String? artist}) async {
+    if (_disposed) return;
+    final generation = ++_generation;
+    // Search overrides never mutate the library entry or its embedded tags.
+    final metadata = audio.toMap();
+    metadata['title'] = title?.trim() ?? audio.title;
+    metadata['artist'] = artist?.trim() ?? audio.artist;
+    _queryAudio = Audio.fromMap(metadata);
+    _outcomes.clear();
+    _statuses.clear();
+    _cached = [];
+    for (final provider in providers) {
+      _setSearching(provider.source);
+    }
+    notifyListeners();
+    try {
+      final cached = await _readCachedCandidates(audio, cache);
+      if (_disposed || generation != _generation) return;
+      _cached = cached;
+    } catch (error, trace) {
+      LOGGER.w('[lyric candidate cache] $error', stackTrace: trace);
+    }
+    if (_disposed || generation != _generation) return;
+    notifyListeners();
+    await Future.wait(providers.map((provider) => _run(provider, generation)));
+  }
+
+  Future<void> retry(ResultSource source) async {
+    if (_disposed ||
+        _statuses[source]?.state == LyricProviderSearchState.searching) {
+      return;
+    }
+    final provider =
+        providers.where((item) => item.source == source).firstOrNull;
+    if (provider == null) return;
+    _setSearching(source);
+    notifyListeners();
+    await _run(provider, _generation);
+  }
+
+  void _setSearching(ResultSource source) {
+    _statuses[source] = LyricProviderSearchStatus(
+      source: source,
+      state: LyricProviderSearchState.searching,
+      candidateCount: _outcomes[source]?.rows.length ?? 0,
+    );
+  }
+
+  Future<void> _run(OnlineLyricProvider provider, int generation) async {
+    final request = (_requests[provider.source] ?? 0) + 1;
+    _requests[provider.source] = request;
+    bool current() =>
+        !_disposed &&
+        generation == _generation &&
+        _requests[provider.source] == request;
+    _ProviderSearchOutcome outcome;
+    try {
+      outcome = await _searchProvider(provider, _queryAudio, providerTimeout,
+          isCurrent: current);
+    } catch (error) {
+      outcome = _ProviderSearchOutcome(
+          provider: provider,
+          rows: const [],
+          errorMessage: _providerErrorMessage(error));
+    }
+    if (!current()) return;
+    _outcomes[provider.source] = outcome;
+    _statuses[provider.source] = _statusForOutcome(outcome);
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    super.dispose();
+  }
 }
 
 List<SongSearchResult> _mergeSearchResults(
@@ -110,8 +225,9 @@ class _ProviderSearchDataError extends FormatException {
 Future<_ProviderSearchOutcome> _searchProvider(
   OnlineLyricProvider provider,
   Audio audio,
-  Duration providerTimeout,
-) async {
+  Duration providerTimeout, {
+  bool Function()? isCurrent,
+}) async {
   final queries = musicSearchQueriesFor(audio);
   if (queries.isEmpty) {
     return _ProviderSearchOutcome(provider: provider, rows: const []);
@@ -120,6 +236,7 @@ Future<_ProviderSearchOutcome> _searchProvider(
   String? errorMessage;
 
   Future<_ProviderQueryResult?> searchBeforeDeadline(String query) async {
+    if (isCurrent != null && !isCurrent()) return null;
     final remaining = providerTimeout - stopwatch.elapsed;
     if (remaining <= Duration.zero) {
       LOGGER.e('${provider.source.name} provider search timed out');

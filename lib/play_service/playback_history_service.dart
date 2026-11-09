@@ -152,10 +152,8 @@ class PlaybackHistoryService extends ChangeNotifier {
         qualified: true,
       ),
     );
-    final retained = _retainRecent(_events);
-    _events
-      ..clear()
-      ..addAll(retained);
+    final cutoff = _oneYearBefore(_now());
+    _events.removeWhere((event) => event.startedAt.isBefore(cutoff));
     notifyListeners();
     await _persist();
   }
@@ -195,7 +193,7 @@ class PlaybackHistoryService extends ChangeNotifier {
     }
     final snapshot = {
       'version': _historyVersion,
-      'events': _events.map((event) => event.toMap()).toList(),
+      'events': List<PlaybackHistoryEvent>.of(_events),
     };
     final nextWrite = _persistChain
         .catchError((_) {})

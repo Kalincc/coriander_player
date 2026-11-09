@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:coriander_player/app_preference.dart';
+import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/lyric/lrc.dart';
 import 'package:coriander_player/lyric/lyric.dart';
@@ -50,6 +51,7 @@ String lyricProviderStatusText(LyricProviderSearchStatus status) {
   final count = status.candidateCount;
   final detail = status.errorMessage?.trim();
   return switch (status.state) {
+    LyricProviderSearchState.searching => '$source：搜索中…',
     LyricProviderSearchState.found => '$source：找到 $count 条候选',
     LyricProviderSearchState.noResults => '$source：无有效结果',
     LyricProviderSearchState.failed =>
@@ -70,13 +72,13 @@ String lyricSourceMatchSummary(SongSearchResult result) {
 Future<String?> showLyricSourceDialog({
   required NavigatorState navigator,
   required Audio audio,
-  Future<OnlineLyricSearchReport> Function(Audio audio)? search,
+  OnlineLyricSearchController? searchController,
 }) {
   return showDialog<String>(
     context: navigator.context,
     builder: (context) => _SetLyricSourceDialog(
       audio: audio,
-      search: search,
+      searchController: searchController,
     ),
   );
 }
@@ -189,10 +191,10 @@ class _SetLyricSourceBtn extends StatelessWidget {
 }
 
 class _SetLyricSourceDialog extends StatefulWidget {
-  const _SetLyricSourceDialog({required this.audio, this.search});
+  const _SetLyricSourceDialog({required this.audio, this.searchController});
 
   final Audio audio;
-  final Future<OnlineLyricSearchReport> Function(Audio audio)? search;
+  final OnlineLyricSearchController? searchController;
 
   @override
   State<_SetLyricSourceDialog> createState() => _SetLyricSourceDialogState();
@@ -200,7 +202,39 @@ class _SetLyricSourceDialog extends StatefulWidget {
 
 class _SetLyricSourceDialogState extends State<_SetLyricSourceDialog> {
   Audio get audio => widget.audio;
-  late final _search = (widget.search ?? searchOnlineLyrics)(audio);
+  late final OnlineLyricSearchController _search;
+  late final TextEditingController _title;
+  late final TextEditingController _artist;
+  String? _queryError;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: audio.title);
+    _artist = TextEditingController(text: audio.artist);
+    _search =
+        widget.searchController ?? OnlineLyricSearchController(audio: audio);
+    unawaited(_search.start());
+  }
+
+  void _searchAgain() {
+    if (_title.text.trim().isEmpty) {
+      setState(() => _queryError = '请填写歌曲标题');
+      return;
+    }
+    setState(() => _queryError = null);
+    FocusScope.of(context).unfocus();
+    unawaited(_search.start(title: _title.text, artist: _artist.text));
+  }
+
+  @override
+  void dispose() {
+    _search.cancel();
+    if (widget.searchController == null) _search.dispose();
+    _title.dispose();
+    _artist.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,9 +244,8 @@ class _SetLyricSourceDialogState extends State<_SetLyricSourceDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(
-          minWidth: 384,
           maxWidth: 600,
-          maxHeight: 600,
+          maxHeight: 640,
         ),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -229,6 +262,35 @@ class _SetLyricSourceDialogState extends State<_SetLyricSourceDialog> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+              ),
+              Focus(
+                onFocusChange: HotkeysHelper.onFocusChanges,
+                child: Row(children: [
+                  Expanded(
+                      child: TextField(
+                    key: const Key('lyric-search-title'),
+                    controller: _title,
+                    decoration: InputDecoration(
+                        labelText: '歌曲标题', errorText: _queryError),
+                    onSubmitted: (_) => _searchAgain(),
+                  )),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: TextField(
+                    key: const Key('lyric-search-artist'),
+                    controller: _artist,
+                    decoration: const InputDecoration(labelText: '歌手（可选）'),
+                    onSubmitted: (_) => _searchAgain(),
+                  )),
+                  IconButton(
+                      onPressed: _searchAgain,
+                      tooltip: '重新搜索歌词',
+                      icon: const Icon(Symbols.search)),
+                ]),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text('仅调整本次搜索条件，不修改歌曲标签'),
               ),
               ListTile(
                 title: const Text("使用本地歌词"),
@@ -247,40 +309,33 @@ class _SetLyricSourceDialogState extends State<_SetLyricSourceDialog> {
               ),
               const Divider(),
               Expanded(
-                child: FutureBuilder<OnlineLyricSearchReport>(
-                  future: _search,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(
-                        child: SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(),
-                        ),
-                      );
-                    }
-                    if (snapshot.hasError || snapshot.data == null) {
-                      return Center(
-                        child: Text(
-                          '歌词搜索失败：${snapshot.error ?? '未知错误'}',
-                          textAlign: TextAlign.center,
-                        ),
-                      );
-                    }
-                    final report = snapshot.data!;
+                child: ListenableBuilder(
+                  listenable: _search,
+                  builder: (context, _) {
+                    final report = _search.report;
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _LyricProviderStatusStrip(statuses: report.statuses),
+                        _LyricProviderStatusStrip(
+                            statuses: report.statuses,
+                            onRetry: (source) =>
+                                unawaited(_search.retry(source))),
+                        if (_search.isSearching)
+                          const LinearProgressIndicator(),
                         const SizedBox(height: 8),
                         Expanded(
                           child: report.candidates.isEmpty
-                              ? const _LyricSearchEmptyState()
+                              ? (_search.isSearching
+                                  ? const Center(child: Text('正在搜索歌词，结果将陆续显示…'))
+                                  : const _LyricSearchEmptyState())
                               : ListView.builder(
                                   itemCount: report.candidates.length,
                                   itemBuilder: (context, i) => _LyricSourceTile(
+                                    key: ValueKey(_search
+                                        .candidateKey(report.candidates[i])),
                                     audio: audio,
                                     searchResult: report.candidates[i],
+                                    search: _search,
                                   ),
                                 ),
                         ),
@@ -298,42 +353,59 @@ class _SetLyricSourceDialogState extends State<_SetLyricSourceDialog> {
 }
 
 class _LyricProviderStatusStrip extends StatelessWidget {
-  const _LyricProviderStatusStrip({required this.statuses});
+  const _LyricProviderStatusStrip(
+      {required this.statuses, required this.onRetry});
 
   final List<LyricProviderSearchStatus> statuses;
+  final ValueChanged<ResultSource> onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 4,
-      children: [
-        for (final status in statuses)
-          Tooltip(
-            message: status.errorMessage ?? lyricProviderStatusText(status),
-            child: Chip(
-              visualDensity: VisualDensity.compact,
-              avatar: Icon(
-                switch (status.state) {
-                  LyricProviderSearchState.found => Symbols.check_circle,
-                  LyricProviderSearchState.noResults => Symbols.search_off,
-                  LyricProviderSearchState.failed => Symbols.error,
-                  LyricProviderSearchState.partial => Symbols.warning,
-                },
-                size: 16,
-              ),
-              label: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 260),
-                child: Text(
-                  lyricProviderStatusText(status),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
+    return LayoutBuilder(
+        builder: (context, constraints) => Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final status in statuses)
+                  Tooltip(
+                    message:
+                        status.errorMessage ?? lyricProviderStatusText(status),
+                    child: InputChip(
+                      visualDensity: VisualDensity.compact,
+                      avatar: Icon(
+                        switch (status.state) {
+                          LyricProviderSearchState.searching =>
+                            Symbols.hourglass_top,
+                          LyricProviderSearchState.found =>
+                            Symbols.check_circle,
+                          LyricProviderSearchState.noResults =>
+                            Symbols.search_off,
+                          LyricProviderSearchState.failed => Symbols.error,
+                          LyricProviderSearchState.partial => Symbols.warning,
+                        },
+                        size: 16,
+                      ),
+                      onDeleted:
+                          status.state == LyricProviderSearchState.searching
+                              ? null
+                              : () => onRetry(status.source),
+                      deleteIcon: const Icon(Symbols.refresh, size: 16),
+                      deleteButtonTooltipMessage:
+                          '重试${lyricSourceName(status.source)}',
+                      label: ConstrainedBox(
+                        constraints: BoxConstraints(
+                            maxWidth:
+                                (constraints.maxWidth - 100).clamp(0.0, 260.0)),
+                        child: Text(
+                          lyricProviderStatusText(status),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ));
   }
 }
 
@@ -351,12 +423,15 @@ class _LyricSearchEmptyState extends StatelessWidget {
 
 class _LyricSourceTile extends StatefulWidget {
   const _LyricSourceTile({
+    super.key,
     required this.searchResult,
     required this.audio,
+    required this.search,
   });
 
   final Audio audio;
   final SongSearchResult searchResult;
+  final OnlineLyricSearchController search;
 
   @override
   State<_LyricSourceTile> createState() => _LyricSourceTileState();
@@ -366,17 +441,20 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
   late final lyric = getOnlineLyric(
     audio: widget.audio,
     candidate: widget.searchResult,
+    providers: widget.search.providers,
+    cache: widget.search.cache,
   );
   @override
   Widget build(BuildContext context) {
-    const loadingWidget = Padding(
-      padding: EdgeInsets.symmetric(vertical: 8.0),
-      child: Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(),
-        ),
+    final loadingWidget = ListTile(
+      title: Text(widget.searchResult.title,
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(lyricSourceMatchSummary(widget.searchResult),
+          maxLines: 2, overflow: TextOverflow.ellipsis),
+      trailing: const SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(),
       ),
     );
     return FutureBuilder(

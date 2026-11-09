@@ -34,6 +34,92 @@ void main() {
     expect(context.currentIndex, 0);
   });
 
+  test('reorder tracks the exact playing occurrence even with duplicate files',
+      () {
+    final a = _audio('a');
+    final b = _audio('b');
+    final c = _audio('c');
+    final queue = PlaybackPlaylistContext()..play(2, [a, b, b, c]);
+    final playingKey = queue.itemKey(2);
+    expect(queue.move(2, 0), isTrue);
+    expect(queue.currentIndex, 0);
+    expect(queue.itemKey(0), playingKey);
+    expect(queue.move(0, 4), isTrue);
+    expect(queue.items, [a, b, c, b]);
+    expect(queue.itemKey(queue.currentIndex), playingKey);
+    expect(queue.undo(), isTrue);
+    expect(queue.itemKey(queue.currentIndex), playingKey);
+  });
+
+  test('remove and clear keep the current item and undo restores the queue',
+      () {
+    final songs = [_audio('a'), _audio('b'), _audio('c')];
+    final queue = PlaybackPlaylistContext()..play(1, songs);
+    expect(queue.remove(1), isFalse);
+    expect(queue.remove(0), isTrue);
+    expect(queue.currentIndex, 0);
+    expect(queue.clearUpcoming(), isTrue);
+    expect(queue.items, [songs[1]]);
+    expect(queue.undo(), isTrue);
+    expect(queue.items, [songs[1], songs[2]]);
+    expect(queue.undo(), isTrue);
+    expect(queue.items, songs);
+    expect(queue.currentIndex, 1);
+  });
+
+  test('undo after a track change does not jump to the former playing track',
+      () {
+    final songs = [_audio('a'), _audio('b'), _audio('c')];
+    final queue = PlaybackPlaylistContext()..play(0, songs);
+    queue.remove(2);
+    queue.selectIndex(1);
+    queue.undo();
+    expect(queue.items, songs);
+    expect(queue.currentIndex, 1);
+  });
+
+  test('undo never removes an inserted track that has started playing', () {
+    final a = _audio('a');
+    final b = _audio('b');
+    final added = _audio('next');
+    final queue = PlaybackPlaylistContext()..play(0, [a, b]);
+    queue.insertNext(added);
+    queue.selectIndex(1);
+    final key = queue.itemKey(1);
+    queue.undo();
+    expect(queue.items[queue.currentIndex], same(added));
+    expect(queue.itemKey(queue.currentIndex), key);
+    expect(queue.items, [a, added, b]);
+  });
+
+  test(
+      'a new playback context invalidates old undo and invalid edits are no-ops',
+      () {
+    final songs = [_audio('a'), _audio('b')];
+    final queue = PlaybackPlaylistContext()..play(0, songs);
+    expect(queue.move(-1, 0), isFalse);
+    expect(queue.move(0, 1), isFalse);
+    expect(queue.remove(99), isFalse);
+    expect(queue.canUndo, isFalse);
+    queue.clearUpcoming();
+    queue.play(0, [songs[1]]);
+    expect(queue.undo(), isFalse);
+    expect(queue.items, [songs[1]]);
+  });
+
+  test('rescan also refreshes metadata in a removed entry retained for undo',
+      () {
+    final old = _audio(r'D:\Music\song.flac');
+    final current = _audio('other');
+    final refreshed = _audio('d:/music/song.flac')..title = 'new';
+    final queue = PlaybackPlaylistContext()..play(0, [current, old]);
+    queue.remove(1);
+    queue.reconcileLibrary(AudioLibrary.forTesting([refreshed]));
+    queue.undo();
+    expect(queue.items.last, same(refreshed));
+    expect(queue.currentIndex, 0);
+  });
+
   test('keeps a complete album playback context', () {
     final album = [
       _audio('D:/music/album-1.flac'),

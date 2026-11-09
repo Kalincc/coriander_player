@@ -19,6 +19,10 @@ class PlaylistDetailPage extends StatefulWidget {
 
 class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   final multiSelectController = MultiSelectController<Audio>();
+  late final _preference = widget.playlist.preserveOrder
+      ? PagePreference(5, SortOrder.ascending,
+          AppPreference.instance.playlistDetailPagePref.contentView)
+      : AppPreference.instance.playlistDetailPagePref;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +31,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     final scheme = Theme.of(context).colorScheme;
 
     return UniPage<Audio>(
-      pref: AppPreference.instance.playlistDetailPagePref,
+      pref: _preference,
       title: widget.playlist.name,
       subtitle: "${contentList.length} 首乐曲",
       contentList: contentList,
@@ -135,6 +139,20 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                 list.sort((a, b) => b.modified.compareTo(a.modified));
                 break;
             }
+          },
+        ),
+        SortMethodDesc(
+          icon: Symbols.queue_music,
+          name: '歌单顺序',
+          method: (list, order) {
+            final positions = {
+              for (final (index, audio)
+                  in widget.playlist.audios.values.indexed)
+                audio.path: index
+            };
+            list.sort((a, b) => order == SortOrder.ascending
+                ? positions[a.path]!.compareTo(positions[b.path]!)
+                : positions[b.path]!.compareTo(positions[a.path]!));
           },
         ),
       ],

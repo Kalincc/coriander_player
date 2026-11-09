@@ -189,6 +189,27 @@ bool createPlaylist(String name) {
   return true;
 }
 
+/// Creates a separate named snapshot; never aliases the live playback queue.
+Playlist createPlaylistFromAudios(String name, Iterable<Audio> audios) {
+  final trimmed = name.trim();
+  if (trimmed.isEmpty ||
+      isReservedPlaylistName(trimmed) ||
+      PLAYLISTS.any((item) => item.name == trimmed)) {
+    throw ArgumentError('歌单名称为空、已存在或是系统保留名称');
+  }
+  final unique = <String, Audio>{};
+  for (final audio in audios) {
+    unique.putIfAbsent(audioPathKey(audio.path), () => audio);
+  }
+  if (unique.isEmpty) throw ArgumentError('播放队列为空');
+  final playlist = Playlist(
+      trimmed, {for (final audio in unique.values) audio.path: audio},
+      preserveOrder: true);
+  PLAYLISTS.add(playlist);
+  playlistRevision.value++;
+  return playlist;
+}
+
 Future<LocalJsonStore> _defaultStore() async =>
     LocalJsonStore(await getAppDataDir());
 
@@ -258,14 +279,17 @@ class Playlist {
     String name,
     Map<String, Audio> audios, {
     bool isSystem = false,
+    bool preserveOrder = false,
   }) {
     if (!isSystem && isReservedPlaylistName(name)) {
       throw ArgumentError.value(name, 'name', 'Reserved playlist name');
     }
-    return Playlist._(name, audios, isSystem: isSystem);
+    return Playlist._(name, audios,
+        isSystem: isSystem, preserveOrder: preserveOrder);
   }
 
-  Playlist._(this._name, this.audios, {required this.isSystem});
+  Playlist._(this._name, this.audios,
+      {required this.isSystem, this.preserveOrder = false});
 
   String _name;
 
@@ -283,6 +307,7 @@ class Playlist {
   Audio? get latestAudio => audios.isEmpty ? null : audios.values.last;
 
   final bool isSystem;
+  final bool preserveOrder;
 
   bool rename(String value) {
     if (isSystem || isReservedPlaylistName(value)) {
@@ -298,6 +323,7 @@ class Playlist {
       'name': name,
       'audios': audioMaps,
       'isSystem': isSystem,
+      if (preserveOrder) 'preserveOrder': true,
     };
   }
 
@@ -307,7 +333,8 @@ class Playlist {
     final audioMaps = map['audios'];
     if (name is! String ||
         audioMaps is! List ||
-        (map.containsKey('isSystem') && map['isSystem'] is! bool)) {
+        (map.containsKey('isSystem') && map['isSystem'] is! bool) ||
+        (map.containsKey('preserveOrder') && map['preserveOrder'] is! bool)) {
       throw const FormatException('Invalid playlist');
     }
     for (final item in audioMaps) {
@@ -328,6 +355,7 @@ class Playlist {
       name,
       audios,
       isSystem: map['isSystem'] == true,
+      preserveOrder: map['preserveOrder'] == true,
     );
   }
 }

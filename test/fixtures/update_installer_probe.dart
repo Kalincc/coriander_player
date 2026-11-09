@@ -48,6 +48,7 @@ Future<void> main(List<String> arguments) async {
     }
     await File('$logPath.arguments.json').writeAsString(jsonEncode(parsed));
     await File(logPath).writeAsString('probe: startup log created');
+    await File('$logPath.ready').writeAsString('probe: helper acknowledged');
     final watch = Stopwatch()..start();
     while (watch.elapsed < const Duration(seconds: 10) &&
         !await File('$logPath.stop').exists()) {

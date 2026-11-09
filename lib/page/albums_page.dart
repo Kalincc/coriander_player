@@ -11,6 +11,16 @@ import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+enum _AlbumLayout {
+  list('列表', Symbols.list),
+  table('表格', Symbols.table),
+  coverWall('封面墙', Symbols.grid_view);
+
+  const _AlbumLayout(this.label, this.icon);
+  final String label;
+  final IconData icon;
+}
+
 class AlbumsPage extends StatefulWidget {
   const AlbumsPage({super.key});
 
@@ -55,65 +65,45 @@ class _AlbumsPageState extends State<AlbumsPage> {
       onSelected: (value) => setState(() => _selection = value),
     );
 
-    if (selection.mode == AlbumBrowseMode.grouped) {
-      return _buildGroupedPage(library, filter);
-    }
-
-    final artistName =
-        selection.mode == AlbumBrowseMode.artist ? selection.artistName : null;
-    final contentList = albumsForArtist(
-      allAlbums: library.albumCollection.values,
-      artists: library.artistCollection,
-      artistName: artistName,
-    );
-    return UniPage<Album>(
-      key: ValueKey(artistName ?? '__uncategorized_albums__'),
-      pref: AppPreference.instance.albumsPagePref,
-      title: '专辑',
-      subtitle: artistName == null
-          ? '${contentList.length} 张专辑'
-          : '该艺术家的 ${contentList.length} 张专辑',
-      contentList: contentList,
-      contentBuilder: (context, item, i, multiSelectController) =>
-          AlbumTile(album: item),
-      primaryAction: filter,
-      enableShufflePlay: false,
-      enableSortMethod: true,
-      enableSortOrder: true,
-      enableContentViewSwitch: true,
-      emptyState: const Center(child: Text('该艺术家没有专辑')),
-      sortMethods: _sortMethods,
-    );
-  }
-
-  AlbumBrowseSelection _effectiveSelection(AudioLibrary library) {
-    if (_selection.mode != AlbumBrowseMode.artist) return _selection;
-    return library.artistCollection.containsKey(_selection.artistName)
-        ? _selection
-        : const AlbumBrowseSelection.uncategorized();
-  }
-
-  Widget _buildGroupedPage(
-    AudioLibrary library,
-    AlbumArtistFilterButton filter,
-  ) {
-    final preference = AppPreference.instance.albumsPagePref;
+    final appPreference = AppPreference.instance;
+    final preference = appPreference.albumsPagePref;
     final sortMethods = _sortMethods;
     final sortIndex = preference.sortMethod.clamp(0, sortMethods.length - 1);
-    final groups = buildAlbumArtistGroups(
-      artists: library.artistCollection.values,
-      sortAlbums: (a, b) =>
-          _compareAlbums(a, b, sortIndex, preference.sortOrder),
-    );
+    final layout = appPreference.albumCoverWall
+        ? _AlbumLayout.coverWall
+        : preference.contentView == ContentView.list
+            ? _AlbumLayout.list
+            : _AlbumLayout.table;
+    final grouped = selection.mode == AlbumBrowseMode.grouped;
+    final artistName =
+        selection.mode == AlbumBrowseMode.artist ? selection.artistName : null;
+    final groups = grouped
+        ? buildAlbumArtistGroups(
+            artists: library.artistCollection.values,
+            sortAlbums: (a, b) =>
+                _compareAlbums(a, b, sortIndex, preference.sortOrder),
+          )
+        : const <AlbumArtistGroup>[];
+    final albums = grouped
+        ? const <Album>[]
+        : (albumsForArtist(
+            allAlbums: library.albumCollection.values,
+            artists: library.artistCollection,
+            artistName: artistName,
+          )..sort(
+            (a, b) => _compareAlbums(a, b, sortIndex, preference.sortOrder)));
+    final coverWall = layout == _AlbumLayout.coverWall;
 
     return PageScaffold(
       title: '专辑',
-      subtitle: '${library.albumCollection.length} 张专辑 · ${groups.length} 位艺术家',
+      subtitle: grouped
+          ? '${library.albumCollection.length} 张专辑 · ${groups.length} 位艺术家'
+          : '${artistName == null ? '' : '该艺术家的 '}${albums.length} 张专辑',
       actions: [
         filter,
         SortMethodComboBox<Album>(
           sortMethods: sortMethods,
-          contentList: library.albumCollection.values.toList(),
+          contentList: albums,
           currSortMethod: sortMethods[sortIndex],
           setSortMethod: (method) => setState(() {
             preference.sortMethod = sortMethods.indexOf(method);
@@ -125,20 +115,44 @@ class _AlbumsPageState extends State<AlbumsPage> {
             preference.sortOrder = order;
           }),
         ),
-        ContentViewSwitch<Album>(
-          contentView: preference.contentView,
-          setContentView: (view) => setState(() {
-            preference.contentView = view;
+        PopupMenuButton<_AlbumLayout>(
+          tooltip: '切换专辑视图；现在：${layout.label}',
+          icon: Icon(layout.icon),
+          initialValue: layout,
+          itemBuilder: (_) => [
+            for (final item in _AlbumLayout.values)
+              PopupMenuItem(value: item, child: Text(item.label)),
+          ],
+          onSelected: (view) => setState(() {
+            appPreference.albumCoverWall = view == _AlbumLayout.coverWall;
+            if (!appPreference.albumCoverWall) {
+              preference.contentView = view == _AlbumLayout.list
+                  ? ContentView.list
+                  : ContentView.table;
+            }
           }),
         ),
       ],
-      body: groups.isEmpty
-          ? const Center(child: Text('没有专辑'))
+      body: groups.isEmpty && albums.isEmpty
+          ? Center(child: Text(artistName == null ? '没有专辑' : '该艺术家没有专辑'))
           : AlbumGroupedView(
+              key: ValueKey((selection, layout)),
               groups: groups,
+              albums: albums,
               contentView: preference.contentView,
-              itemBuilder: (context, album) => AlbumTile(album: album),
+              coverWall: coverWall,
+              itemBuilder: (context, album) => AlbumTile(
+                album: album,
+                coverWall: coverWall,
+              ),
             ),
     );
+  }
+
+  AlbumBrowseSelection _effectiveSelection(AudioLibrary library) {
+    if (_selection.mode != AlbumBrowseMode.artist) return _selection;
+    return library.artistCollection.containsKey(_selection.artistName)
+        ? _selection
+        : const AlbumBrowseSelection.uncategorized();
   }
 }

@@ -20,6 +20,26 @@ NowPlayingPagePreference _preference({
     );
 
 void main() {
+  test(
+      'song offsets are independent, path-normalized, and survive serialization',
+      () {
+    final pref = _preference();
+    pref.bindAudioPath(r'D:\Music\One.flac');
+    pref.setLyricOffsetMs(300);
+    pref.bindAudioPath('D:/Music/two.flac');
+    expect(pref.lyricOffsetMs, 0);
+    pref.setLyricOffsetMs(-200);
+    pref.bindAudioPath('d:/music/one.flac');
+    expect(pref.lyricOffsetMs, 300);
+    final restored = NowPlayingPagePreference.fromMap(pref.toMap());
+    restored.bindAudioPath('d:/music/two.flac');
+    expect(restored.lyricOffsetMs, -200);
+    restored.setLyricOffsetMs(0);
+    restored.bindAudioPath('d:/music/one.flac');
+    expect(restored.lyricOffsetMs, 300);
+    restored.bindAudioPath('d:/music/two.flac');
+    expect(restored.lyricOffsetMs, 0);
+  });
   test('changes the lyric offset by 100ms and persists each change', () {
     final preference = _preference();
     var saveCount = 0;

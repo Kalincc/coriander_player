@@ -11,6 +11,8 @@ class PlaybackHistoryEvent {
   final Duration listened;
   final bool qualified;
 
+  Map<String, Object> toJson() => toMap();
+
   Map<String, Object> toMap() => {
         'path': path,
         'startedAt': startedAt.toIso8601String(),

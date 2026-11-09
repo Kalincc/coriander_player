@@ -5,10 +5,25 @@ import 'package:coriander_player/update/update_installer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('launches the installer with silent update arguments', () async {
+  late Directory directory;
+  late File helper;
+  late File installer;
+  late File log;
+  setUp(() async {
+    directory = await Directory.systemTemp.createTemp('handoff-startup-');
+    addTearDown(() => directory.delete(recursive: true));
+    helper = await File('${directory.path}/bundled-helper.exe')
+        .writeAsString('test helper');
+    installer = File('${directory.path}/update.Setup.exe');
+    log = File('${directory.path}/update.Install.log');
+  });
+
+  test('stages a separate helper with the parent pid and verified paths',
+      () async {
     String? executable;
     List<String>? arguments;
     final updater = UpdateInstaller(
+      helper: helper,
       startDetached: (path, args) async {
         executable = path;
         arguments = args;
@@ -17,26 +32,17 @@ void main() {
       confirmStartup: (pid, log) async => expect(pid, 123),
     );
 
-    await updater.start(
-      installer: File(r'C:\Temp\Coriander.Setup.exe'),
-      log: File(r'C:\Temp\Coriander.Install.log'),
-    );
+    await updater.start(installer: installer, log: log);
 
-    expect(executable, r'C:\Temp\Coriander.Setup.exe');
-    expect(
-        arguments,
-        containsAll([
-          '/VERYSILENT',
-          '/SUPPRESSMSGBOXES',
-          '/NORESTART',
-          '/CLOSEAPPLICATIONS',
-          '/CORIANDERAPPUPDATE=1',
-          r'/LOG=C:\Temp\Coriander.Install.log',
-        ]));
+    expect(File(executable!).uri.pathSegments.last, updateHandoffExecutable);
+    expect(await File(executable!).readAsString(), 'test helper');
+    expect(arguments, ['$pid', installer.absolute.path, log.absolute.path]);
+    expect(await log.exists(), isFalse);
   });
 
   test('propagates installer launch failures', () async {
     final updater = UpdateInstaller(
+      helper: helper,
       startDetached: (path, args) async {
         throw StateError('cannot start');
       },
@@ -44,27 +50,32 @@ void main() {
 
     await expectLater(
       updater.start(
-        installer: File(r'C:\Temp\Coriander.Setup.exe'),
-        log: File(r'C:\Temp\Coriander.Install.log'),
+        installer: installer,
+        log: log,
       ),
       throwsA(isA<UpdateInstallerException>()),
     );
   });
 
-  test('a created process is not a confirmed installer startup', () async {
+  test('a created process is not a confirmed helper handoff', () async {
     final ready = Completer<void>();
+    final spawned = Completer<void>();
     var started = false;
     final updater = UpdateInstaller(
-      startDetached: (_, __) async => 123,
+      helper: helper,
+      startDetached: (_, __) async {
+        spawned.complete();
+        return 123;
+      },
       confirmStartup: (_, __) => ready.future,
     );
     final launch = updater
         .start(
-          installer: File('installer.exe'),
-          log: File('not-created-install.log'),
+          installer: installer,
+          log: log,
         )
         .then((_) => started = true);
-    await Future<void>.delayed(Duration.zero);
+    await spawned.future;
     expect(started, isFalse);
     ready.complete();
     await launch;
@@ -72,10 +83,6 @@ void main() {
   });
 
   test('an old log cannot falsely acknowledge a new installer', () async {
-    final directory =
-        await Directory.systemTemp.createTemp('installer-startup-');
-    addTearDown(() => directory.delete(recursive: true));
-    final log = File('${directory.path}/install.log');
     await log.writeAsString('previous failure evidence');
     var launched = false;
     final updater = UpdateInstaller(
@@ -91,66 +98,50 @@ void main() {
     expect(await log.readAsString(), 'previous failure evidence');
   });
 
-  test('startup requires a nonempty log and catches an immediate exit',
+  test(
+      'handoff requires a nonempty acknowledgement and catches an immediate exit',
       () async {
-    final directory =
-        await Directory.systemTemp.createTemp('installer-startup-');
-    addTearDown(() => directory.delete(recursive: true));
-    final log = File('${directory.path}/install.log');
-    await log.writeAsString('startup log');
+    await handoffReadyFile(log).writeAsString('ready');
     await expectLater(
-      waitForInstallerStartup(
+      waitForHandoffReady(
         log: log,
         readExitCode: () => 7,
         timeout: const Duration(milliseconds: 50),
-        settleTime: Duration.zero,
       ),
       throwsA(isA<UpdateInstallerException>()
           .having((error) => error.exitCode, 'exitCode', 7)),
     );
-    await waitForInstallerStartup(
+    await waitForHandoffReady(
       log: log,
       readExitCode: () => null,
-      settleTime: Duration.zero,
     );
   });
 
-  test('an alive process without a log times out without a successful handoff',
+  test('an alive helper without acknowledgement cannot close the player',
       () async {
-    final directory =
-        await Directory.systemTemp.createTemp('installer-startup-');
-    addTearDown(() => directory.delete(recursive: true));
-    final log = File('${directory.path}/install.log');
-    await log.writeAsString('');
+    await log.writeAsString('installer log is not a handoff acknowledgement');
     await expectLater(
-      waitForInstallerStartup(
+      waitForHandoffReady(
         log: log,
         readExitCode: () => null,
         timeout: const Duration(milliseconds: 25),
         pollInterval: const Duration(milliseconds: 2),
-        settleTime: Duration.zero,
       ),
       throwsA(isA<UpdateInstallerException>().having(
           (error) => error.processMayBeRunning, 'may be running', true)),
     );
   });
 
-  test('a process that fails just after creating its log is rejected',
-      () async {
-    final directory =
-        await Directory.systemTemp.createTemp('installer-startup-');
-    addTearDown(() => directory.delete(recursive: true));
-    final log = File('${directory.path}/install.log');
-    await log.writeAsString('startup log');
-    var reads = 0;
+  test('failed acknowledgement cancels the pending handoff', () async {
+    final updater = UpdateInstaller(
+      helper: helper,
+      startDetached: (_, __) async => 123,
+      confirmStartup: (_, __) async => throw StateError('not ready'),
+    );
     await expectLater(
-      waitForInstallerStartup(
-        log: log,
-        readExitCode: () => ++reads > 1 ? 1 : null,
-        pollInterval: const Duration(milliseconds: 2),
-        settleTime: const Duration(milliseconds: 10),
-      ),
+      updater.start(installer: installer, log: log),
       throwsA(isA<UpdateInstallerException>()),
     );
+    expect(await handoffCancelFile(log).exists(), isTrue);
   });
 }

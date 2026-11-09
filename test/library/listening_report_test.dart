@@ -115,6 +115,10 @@ void main() {
     expect(
         report.artistRanks.map((rank) => rank.name), ['Artist B', 'Artist A']);
     expect(report.albumRanks.map((rank) => rank.name), ['Album B', 'Album A']);
+    for (final rank in [report.artistRanks.first, report.albumRanks.first]) {
+      expect(rank.playCount, 7);
+      expect(rank.listened, const Duration(seconds: 220));
+    }
   });
 
   test('uses play count and name only to break duration ties', () {

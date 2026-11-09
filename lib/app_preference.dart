@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:coriander_player/app_settings.dart';
+import 'package:coriander_player/library/audio_path_key.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:coriander_player/page/now_playing_page/page.dart';
 import 'package:coriander_player/page/uni_page.dart';
@@ -37,6 +38,8 @@ class NowPlayingPagePreference extends ChangeNotifier {
   double translationFontSize;
   int lyricOffsetMs;
   bool showTranslation;
+  final Map<String, int> _lyricOffsetsByPath;
+  String? _activeAudioPath;
 
   NowPlayingPagePreference(
     this.nowPlayingViewMode,
@@ -45,7 +48,12 @@ class NowPlayingPagePreference extends ChangeNotifier {
     this.translationFontSize, {
     int lyricOffsetMs = 0,
     this.showTranslation = true,
-  }) : lyricOffsetMs = clampLyricOffsetMs(lyricOffsetMs);
+    Map<String, int> lyricOffsetsByPath = const {},
+  })  : lyricOffsetMs = clampLyricOffsetMs(lyricOffsetMs),
+        _lyricOffsetsByPath = {
+          for (final entry in lyricOffsetsByPath.entries)
+            audioPathKey(entry.key): clampLyricOffsetMs(entry.value),
+        };
 
   Map toMap() => {
         "nowPlayingViewMode": nowPlayingViewMode.name,
@@ -54,6 +62,7 @@ class NowPlayingPagePreference extends ChangeNotifier {
         "translationFontSize": translationFontSize,
         "lyricOffsetMs": lyricOffsetMs,
         "showTranslation": showTranslation,
+        "lyricOffsetsByPath": Map<String, int>.from(_lyricOffsetsByPath),
       };
 
   factory NowPlayingPagePreference.fromMap(Map map) {
@@ -68,6 +77,14 @@ class NowPlayingPagePreference extends ChangeNotifier {
       lyricOffsetMs:
           rawOffset is num ? clampLyricOffsetMs(rawOffset.toInt()) : 0,
       showTranslation: rawShowTranslation is bool ? rawShowTranslation : true,
+      lyricOffsetsByPath: {
+        if (map['lyricOffsetsByPath'] is Map)
+          for (final entry in (map['lyricOffsetsByPath'] as Map).entries)
+            if (entry.key is String &&
+                entry.value is num &&
+                (entry.value as num).isFinite)
+              entry.key as String: (entry.value as num).toInt(),
+      },
     );
   }
 
@@ -75,6 +92,22 @@ class NowPlayingPagePreference extends ChangeNotifier {
     final clampedValue = clampLyricOffsetMs(value);
     if (lyricOffsetMs == clampedValue) return;
     lyricOffsetMs = clampedValue;
+    final path = _activeAudioPath;
+    if (path != null) {
+      if (clampedValue == 0) {
+        _lyricOffsetsByPath.remove(path);
+      } else {
+        _lyricOffsetsByPath[path] = clampedValue;
+      }
+    }
+    notifyListeners();
+  }
+
+  void bindAudioPath(String? path) {
+    final key = path == null ? null : audioPathKey(path);
+    if (_activeAudioPath == key) return;
+    _activeAudioPath = key;
+    lyricOffsetMs = _lyricOffsetsByPath[key] ?? 0;
     notifyListeners();
   }
 
@@ -113,6 +146,7 @@ class AppPreference {
 
   var albumsPagePref =
       PagePreference(0, SortOrder.ascending, ContentView.table);
+  bool albumCoverWall = false;
 
   var albumDetailPagePref =
       PagePreference(2, SortOrder.ascending, ContentView.list);
@@ -136,7 +170,15 @@ class AppPreference {
   var nowPlayingPagePref = NowPlayingPagePreference(
       NowPlayingViewMode.withLyric, LyricTextAlign.left, 22.0, 18.0);
 
-  Future<void> save({bool rethrowOnError = false}) async {
+  Future<void> _saveTail = Future.value();
+
+  Future<void> save({bool rethrowOnError = false}) {
+    final write = _saveTail.then((_) => _save(rethrowOnError: rethrowOnError));
+    _saveTail = write.catchError((_) {});
+    return write;
+  }
+
+  Future<void> _save({required bool rethrowOnError}) async {
     try {
       final supportPath = (await getAppDataDir()).path;
       final appPreferencePath = "$supportPath\\app_preference.json";
@@ -146,6 +188,7 @@ class AppPreference {
         "artistsPagePref": artistsPagePref.toMap(),
         "artistDetailPagePref": artistDetailPagePref.toMap(),
         "albumsPagePref": albumsPagePref.toMap(),
+        "albumCoverWall": albumCoverWall,
         "albumDetailPagePref": albumDetailPagePref.toMap(),
         "foldersPagePref": foldersPagePref.toMap(),
         "folderDetailPagePref": folderDetailPagePref.toMap(),
@@ -182,6 +225,7 @@ class AppPreference {
       );
       instance.albumsPagePref =
           PagePreference.fromMap(prefMap["albumsPagePref"]);
+      instance.albumCoverWall = prefMap["albumCoverWall"] == true;
       instance.albumDetailPagePref = PagePreference.fromMap(
         prefMap["albumDetailPagePref"],
       );

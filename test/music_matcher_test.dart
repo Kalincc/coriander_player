@@ -25,6 +25,124 @@ Audio makeAudio(String path, int modified) => Audio(
 
 void main() {
   setUpAll(() => RustLib.initMock(api: _TestRustLibApi()));
+  test(
+      'progressive search publishes cache and fast results before a slow source',
+      () async {
+    final audio = makeAudio('progressive.flac', 1);
+    final cache = memoryCache();
+    await cache.writeEntry(OnlineLyricCacheEntry(
+        key: 'qq:1',
+        audioFingerprint: audioLyricFingerprint(audio),
+        payload:
+            const OnlineLyricPayload(OnlineLyricFormat.lrc, '[00:01.00]cached'),
+        title: audio.title,
+        artists: audio.artist,
+        album: audio.album,
+        score: .95,
+        fetchedAtMs: DateTime.now().millisecondsSinceEpoch));
+    final slow = Completer<List<SongSearchResult>>();
+    final controller =
+        OnlineLyricSearchController(audio: audio, cache: cache, providers: [
+      FakeProvider(ResultSource.qq, search: (_, __) => slow.future),
+      FakeProvider(ResultSource.netease,
+          search: (_, __) async =>
+              [candidate(ResultSource.netease, '红豆', '王菲', '唱游', id: 2)]),
+    ]);
+    addTearDown(controller.dispose);
+    final states = <OnlineLyricSearchReport>[];
+    controller.addListener(() => states.add(controller.report));
+    final finished = controller.start();
+    await Future<void>.delayed(Duration.zero);
+    expect(
+        states.any((state) => state.candidates.any((item) => item.fromCache)),
+        isTrue);
+    expect(controller.report.candidates, hasLength(2));
+    expect(controller.report.statuses.first.state,
+        LyricProviderSearchState.searching);
+    expect(
+        controller.report.statuses.last.state, LyricProviderSearchState.found);
+    slow.complete([]);
+    await finished;
+    expect(controller.isSearching, isFalse);
+  });
+
+  test(
+      'one-source retry preserves other results and does not restart a pending source',
+      () async {
+    final slow = Completer<List<SongSearchResult>>();
+    var slowCalls = 0;
+    var fail = true;
+    final controller = OnlineLyricSearchController(
+        audio: makeAudio('retry.flac', 1),
+        cache: memoryCache(),
+        providers: [
+          FakeProvider(ResultSource.qq, search: (_, __) async {
+            if (fail) throw StateError('offline');
+            return [candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1)];
+          }),
+          FakeProvider(ResultSource.netease, search: (_, __) {
+            slowCalls++;
+            return slow.future;
+          }),
+        ]);
+    addTearDown(controller.dispose);
+    final finished = controller.start();
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.report.statuses.first.state,
+        LyricProviderSearchState.failed);
+    fail = false;
+    await controller.retry(ResultSource.qq);
+    expect(controller.report.candidates.single.qqSongId, 1);
+    expect(slowCalls, 1);
+    expect(controller.isSearching, isTrue);
+    slow.complete([]);
+    await finished;
+  });
+
+  test('manual search ignores old completions and never edits library metadata',
+      () async {
+    final audio = makeAudio('manual.flac', 1);
+    final old = Completer<List<SongSearchResult>>();
+    final controller = OnlineLyricSearchController(
+        audio: audio,
+        cache: memoryCache(),
+        providers: [
+          FakeProvider(ResultSource.qq,
+              search: (_, queryAudio) => queryAudio.title == '红豆'
+                  ? old.future
+                  : Future.value(
+                      [candidate(ResultSource.qq, '新标题', '王菲', '唱游', id: 2)]))
+        ]);
+    addTearDown(controller.dispose);
+    final first = controller.start();
+    await Future<void>.delayed(Duration.zero);
+    await controller.start(title: '新标题', artist: '王菲');
+    old.complete([candidate(ResultSource.qq, '红豆', '王菲', '唱游', id: 1)]);
+    await first;
+    expect(controller.report.candidates.single.qqSongId, 2);
+    expect(audio.title, '红豆');
+  });
+
+  test('disposing a search prevents fallback requests and late notifications',
+      () async {
+    final response = Completer<List<SongSearchResult>>();
+    var calls = 0;
+    final controller = OnlineLyricSearchController(
+        audio: makeAudio('cancel.flac', 1),
+        cache: memoryCache(),
+        providers: [
+          FakeProvider(ResultSource.qq, search: (_, __) {
+            calls++;
+            return response.future;
+          })
+        ]);
+    final finished = controller.start();
+    await Future<void>.delayed(Duration.zero);
+    controller.dispose();
+    response.complete([]);
+    await finished;
+    expect(calls, 1);
+  });
   test('search result scoring uses normalized candidate scoring', () {
     final audio = makeAudio('song.flac', 1);
     final result = SongSearchResult.fromKugouSearchResult({

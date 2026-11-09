@@ -12,7 +12,8 @@ import 'package:coriander_player/update/update_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('installed update saves launches then closes in order', () async {
+  test('installed update saves, arms the helper, then closes in order',
+      () async {
     final events = <String>[];
     final controller = controllerFixture(installed: true, events: events);
 
@@ -28,6 +29,21 @@ void main() {
       'close',
     ]);
     expect(controller.state, isA<UpdatePreparingInstall>());
+    controller.dispose();
+  });
+
+  test('failure to close the player cancels the armed handoff', () async {
+    final events = <String>[];
+    final controller = controllerFixture(
+      installed: true,
+      events: events,
+      closeError: StateError('window close failed'),
+    );
+    await controller.check();
+    await controller.install();
+    expect(
+        events.skip(events.length - 3), ['launch', 'close', 'cancel-handoff']);
+    expect((controller.state as UpdateFailed).message, contains('已取消安装'));
     controller.dispose();
   });
 
@@ -282,6 +298,7 @@ UpdateController controllerFixture({
   bool noUpdate = false,
   Object? saveError,
   Object? launchError,
+  Object? closeError,
   Completer<void>? installerGate,
   Future<void> Function(Directory directory)? cleanup,
   Future<VerifiedUpdate> Function(
@@ -322,7 +339,7 @@ UpdateController controllerFixture({
         },
   );
   final installer = _FakeInstaller(events, launchError, gate: installerGate);
-  final shutdown = _FakeShutdown(events, saveError);
+  final shutdown = _FakeShutdown(events, saveError, closeError: closeError);
   return UpdateController(
     service: service,
     environment: environment,
@@ -434,6 +451,9 @@ class _FakeInstaller extends UpdateInstaller {
   final Completer<void>? gate;
 
   @override
+  Future<void> cancelHandoff(File log) async => events.add('cancel-handoff');
+
+  @override
   Future<void> start({required File installer, required File log}) async {
     events.add('launch');
     await gate?.future;
@@ -442,7 +462,7 @@ class _FakeInstaller extends UpdateInstaller {
 }
 
 class _FakeShutdown extends ApplicationShutdown {
-  _FakeShutdown(this.events, this.saveError)
+  _FakeShutdown(this.events, this.saveError, {this.closeError})
       : super(
           savePlaylists: () async {},
           saveLyricSources: () async {},
@@ -455,6 +475,7 @@ class _FakeShutdown extends ApplicationShutdown {
 
   final List<String> events;
   final Object? saveError;
+  final Object? closeError;
 
   @override
   Future<void> saveUserState() async {
@@ -465,5 +486,6 @@ class _FakeShutdown extends ApplicationShutdown {
   @override
   Future<void> closeAfterUpdateHandoff() async {
     events.add('close');
+    if (closeError != null) throw closeError!;
   }
 }

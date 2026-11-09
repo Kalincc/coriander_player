@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/src/rust/api/system_theme.dart';
 import 'package:coriander_player/src/rust/frb_generated.dart';
@@ -51,6 +52,33 @@ void main() {
     expect(AudioLibrary.instance.scanRoots, isEmpty);
     expect(AudioLibrary.instance.audioCollection.single.path,
         'D:/Music/Artist/Album/song.flac');
+  });
+
+  test('background index build uses the current artist separator', () async {
+    final settings = AppSettings.instance;
+    final previous = settings.artistSplitPattern;
+    settings.artistSplitPattern = ';';
+    addTearDown(() => settings.artistSplitPattern = previous);
+    final directory = await Directory.systemTemp.createTemp('coriander-split-');
+    addTearDown(() => directory.delete(recursive: true));
+    final index = File('${directory.path}/index.json');
+    final folder = _folder('D:/Music', 'D:/Music/song.flac');
+    final song = (folder['audios'] as List).single as Map;
+    song['artist'] = '甲;乙';
+    song['album_artist'] = '專輯甲;專輯乙';
+    await index.writeAsString(jsonEncode({
+      'folders': [folder]
+    }));
+
+    await AudioLibrary.initFromIndex(indexFile: index);
+    final library = AudioLibrary.instance;
+    final audio = library.audioCollection.single;
+    final album = library.albumCollection.values.single;
+    expect(audio.splitedArtists, ['甲', '乙']);
+    expect(album.albumArtistNames, {'专辑甲', '专辑乙'});
+    expect(album.artistsMap.keys, ['甲', '乙']);
+    expect(library.artistCollection['专辑乙']!.albumsMap[album.id], same(album));
+    expect(library.albumForAudio(audio), same(album));
   });
 
   test('surfaces a corrupt index without replacing the loaded library',

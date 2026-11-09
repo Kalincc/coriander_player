@@ -44,6 +44,51 @@ void main() {
     }
   });
 
+  test(
+      'saving a queue snapshot preserves order, deduplicates paths, and is independent',
+      () async {
+    await readPlaylists(store: store);
+    final a = makeAudio(r'D:\Music\a.flac');
+    final alias = makeAudio('d:/music/a.flac');
+    final b = makeAudio('D:/Music/b.flac');
+    final queue = [b, a, alias];
+    final saved = createPlaylistFromAudios('  队列收藏  ', queue);
+    queue.clear();
+    expect(saved.name, '队列收藏');
+    expect(saved.preserveOrder, isTrue);
+    expect(saved.audios.values, [b, a]);
+    await savePlaylists(store: store, rethrowOnError: true);
+    await readPlaylists(store: store);
+    expect(PLAYLISTS.singleWhere((item) => item.name == '队列收藏').preserveOrder,
+        isTrue);
+    expect(PLAYLISTS.singleWhere((item) => item.name == '队列收藏').audios.keys,
+        [b.path, a.path]);
+    expect(() => createPlaylistFromAudios('我喜欢', [a]), throwsArgumentError);
+    expect(() => createPlaylistFromAudios('队列收藏', [a]), throwsArgumentError);
+    expect(() => createPlaylistFromAudios('  ', [a]), throwsArgumentError);
+  });
+
+  test(
+      'failed snapshot save keeps existing disk data and the new playlist for retry',
+      () async {
+    await readPlaylists(store: store);
+    final before =
+        await File('${directory.path}/playlists.json').readAsString();
+    final saved = createPlaylistFromAudios('retry snapshot', [makeAudio('a')]);
+    final failing = LocalJsonStore(directory, moveFile: (_, __) async {
+      throw const FileSystemException('blocked');
+    });
+    await expectLater(savePlaylists(store: failing, rethrowOnError: true),
+        throwsA(isA<FileSystemException>()));
+    expect(
+        await File('${directory.path}/playlists.json').readAsString(), before);
+    expect(PLAYLISTS.contains(saved), isTrue);
+    await savePlaylists(store: store, rethrowOnError: true);
+    await readPlaylists(store: store);
+    expect(
+        PLAYLISTS.where((item) => item.name == 'retry snapshot'), hasLength(1));
+  });
+
   test('recovers schema-invalid primary from a legacy backup before migrating',
       () async {
     final song = makeAudio('D:/music/recovered.flac');

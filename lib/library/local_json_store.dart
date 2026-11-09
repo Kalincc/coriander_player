@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 typedef MoveFile = Future<void> Function(File source, File destination);
 
 class LocalJsonStore {
@@ -48,7 +50,8 @@ class LocalJsonStore {
     if (await temporary.exists()) {
       await temporary.delete();
     }
-    await temporary.writeAsString(json.encode(value), flush: true);
+    final encoded = await compute(_encodeJson, value);
+    await temporary.writeAsBytes(encoded, flush: true);
 
     try {
       if (await target.exists()) {
@@ -105,3 +108,5 @@ class LocalJsonStore {
     await source.rename(destination.path);
   }
 }
+
+List<int> _encodeJson(Object value) => JsonUtf8Encoder().convert(value);

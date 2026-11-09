@@ -239,13 +239,24 @@ class UpdateController extends ChangeNotifier implements UpdateControllerView {
         log: verified.installLog,
       );
       installerStarted = true;
-      await _shutdown.closeAfterUpdateHandoff();
+      try {
+        await _shutdown.closeAfterUpdateHandoff();
+      } catch (error) {
+        try {
+          await _installer.cancelHandoff(verified.installLog);
+        } catch (cancelError) {
+          throw UpdateInstallerException('无法取消更新交接：$cancelError',
+              log: verified.installLog, processMayBeRunning: true);
+        }
+        throw UpdateInstallerException('播放器关闭失败，已取消安装：$error',
+            log: verified.installLog);
+      }
     } on UpdateInstallerException catch (error, stackTrace) {
       if (_isCurrent(generation)) {
         LOGGER.e(error, stackTrace: stackTrace);
         _setState(UpdateFailed(
-          '安装器未能正常启动，播放器未退出。\n$error\n'
-          '${error.processMayBeRunning ? "安装器仍可能运行，请先检查或关闭它，避免重复启动。\n" : ""}'
+          '更新交接失败，播放器未退出。\n$error\n'
+          '${error.processMayBeRunning ? "更新助手仍可能运行，请先确认状态，避免重复启动。\n" : ""}'
           '已保留安装包目录：${temporaryDirectory?.path}\n'
           '安装日志（若已生成）：${error.log.path}',
           canRetry: !error.processMayBeRunning,

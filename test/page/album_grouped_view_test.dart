@@ -6,8 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  for (final view in ContentView.values) {
-    testWidgets('first frame stays lazy with 1000 artist groups: $view',
+  for (final (view, covers) in [
+    (ContentView.list, false),
+    (ContentView.table, false),
+    (ContentView.table, true),
+  ]) {
+    testWidgets('first frame stays lazy: $view, coverWall=$covers',
         (tester) async {
       final groups = List.generate(
           1000,
@@ -21,13 +25,15 @@ void main() {
               body: AlbumGroupedView(
         groups: groups,
         contentView: view,
+        coverWall: covers,
         itemBuilder: (_, album) {
           built++;
           return Text(album.name);
         },
       ))));
       expect(built, lessThan(40));
-      debugPrint('PERF grouped $view: first-frame albums=$built (1000 groups)');
+      debugPrint(
+          'PERF grouped $view covers=$covers: first-frame albums=$built');
       await tester.scrollUntilVisible(find.text('Album 20'), 500,
           scrollable: find.byType(Scrollable).first);
       expect(find.text('Artist 20 · 1 张专辑'), findsOneWidget);

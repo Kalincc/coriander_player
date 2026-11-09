@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:ui';
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/artist_name_normalizer.dart';
@@ -130,7 +131,18 @@ class AudioLibrary {
     final file = indexFile ??
         File(
             '${(await getAppDataDir()).path}${Platform.pathSeparator}index.json');
-    final decoded = json.decode(await file.readAsString());
+    final path = file.path;
+    final splitPattern = AppSettings.instance.artistSplitPattern;
+    final loaded = await Isolate.run(() => _readIndex(path, splitPattern));
+    _artworkCache.clear();
+    _instance = loaded;
+    revision.value++;
+  }
+
+  // Build a complete snapshot without touching UI state or native bindings.
+  static AudioLibrary _readIndex(String path, String splitPattern) {
+    final decoded = json.decode(File(path).readAsStringSync());
+    final artistSeparator = RegExp(splitPattern);
     if (decoded is! Map) {
       throw const FormatException('Invalid library index envelope');
     }
@@ -163,21 +175,21 @@ class AudioLibrary {
         if (encodedAudio is! Map) {
           throw const FormatException('Invalid library audio');
         }
-        audios.add(Audio.fromMap(encodedAudio));
+        audios
+            .add(Audio.fromMap(encodedAudio, artistSeparator: artistSeparator));
       }
       folders.add(AudioFolder.fromMap(encodedFolder, audios));
     }
 
-    final loaded = AudioLibrary._(
+    return AudioLibrary._(
       folders,
       scanRoots: scanRoots,
-    ).._buildCollections();
-    _artworkCache.clear();
-    _instance = loaded;
-    revision.value++;
+    ).._buildCollections(artistSeparator: artistSeparator);
   }
 
-  void _buildCollections() {
+  void _buildCollections({RegExp? artistSeparator}) {
+    late final separator =
+        artistSeparator ?? RegExp(AppSettings.instance.artistSplitPattern);
     audioCollection.clear();
     artistCollection.clear();
     albumCollection.clear();
@@ -190,58 +202,31 @@ class AudioLibrary {
 
     for (Audio audio in audioCollection) {
       _audiosByPath[audioPathKey(audio.path)] = audio;
+      final performers = <String>{};
       for (String rawName in audio.splitedArtists) {
         final canonicalName = normalizeArtistName(rawName.trim());
         artistAliases[rawName] = canonicalName;
+        performers.add(canonicalName);
       }
 
-      for (final canonicalName in {
-        ..._canonicalArtistNames(audio),
-        ...audio.albumArtistNames,
-      }) {
-        /// 如果artistCollection中有artistName指向的artist，putIfAbsent会返回该artist。
-        /// 随后往这个artist里添加该audio。
-        ///
-        /// 如果没有，创建一个名字为artistName的空艺术家，并将artistName与之相连。
-        /// 随后往这个artist里添加该audio。
-        artistCollection
-            .putIfAbsent(canonicalName, () => Artist(name: canonicalName))
-            .works
-            .add(audio);
-      }
-
-      albumCollection
-          .putIfAbsent(
-            audio.albumKey,
-            () => Album(
-              name: audio.album,
-              id: audio.albumKey,
-              albumArtist: audio.effectiveAlbumArtist,
-              albumArtistNames: audio.albumArtistNames.toSet(),
-            ),
-          )
-          .works
-          .add(audio);
-    }
-
-    /// 将艺术家和专辑链接起来
-    for (Artist artist in artistCollection.values) {
-      for (Audio audio in artist.works) {
-        artist.albumsMap.putIfAbsent(
-          audio.albumKey,
-          () => albumCollection[audio.albumKey]!,
-        );
-      }
-    }
-
-    /// 将专辑和艺术家链接起来
-    for (Album album in albumCollection.values) {
-      for (Audio audio in album.works) {
-        for (final canonicalName in _canonicalArtistNames(audio)) {
-          album.artistsMap.putIfAbsent(
-            canonicalName,
-            () => artistCollection[canonicalName]!,
-          );
+      final albumArtists = audio._albumArtistNames(separator);
+      final albumKey = audio._albumKey(albumArtists);
+      final album = albumCollection.putIfAbsent(
+        albumKey,
+        () => Album(
+          name: audio.album,
+          id: albumKey,
+          albumArtist: audio.effectiveAlbumArtist,
+          albumArtistNames: albumArtists.toSet(),
+        ),
+      )..works.add(audio);
+      for (final name in {...performers, ...albumArtists}) {
+        final artist =
+            artistCollection.putIfAbsent(name, () => Artist(name: name));
+        artist.works.add(audio);
+        artist.albumsMap[albumKey] = album;
+        if (performers.contains(name)) {
+          album.artistsMap[name] = artist;
         }
       }
     }
@@ -319,14 +304,19 @@ class Audio {
   String get effectiveAlbumArtist =>
       albumArtist?.trim().isNotEmpty == true ? albumArtist!.trim() : artist;
 
-  List<String> get albumArtistNames => effectiveAlbumArtist
-      .split(RegExp(AppSettings.instance.artistSplitPattern))
+  List<String> get albumArtistNames =>
+      _albumArtistNames(RegExp(AppSettings.instance.artistSplitPattern));
+
+  List<String> _albumArtistNames(RegExp separator) => effectiveAlbumArtist
+      .split(separator)
       .map((name) => normalizeArtistName(name.trim()))
       .toSet()
       .toList()
     ..sort();
 
-  String get albumKey => jsonEncode([album.trim(), albumArtistNames]);
+  String get albumKey => _albumKey(albumArtistNames);
+
+  String _albumKey(List<String> artists) => jsonEncode([album.trim(), artists]);
 
   String trackLabel({bool includeDisc = false}) {
     final number = track > 0 ? track.toString().padLeft(2, '0') : '--';
@@ -373,11 +363,12 @@ class Audio {
     this.albumArtist,
     this.disc = 0,
     this.discTotal = 0,
+    RegExp? artistSeparator,
   }) : splitedArtists = artist.split(
-          RegExp(AppSettings.instance.artistSplitPattern),
+          artistSeparator ?? RegExp(AppSettings.instance.artistSplitPattern),
         );
 
-  factory Audio.fromMap(Map map) => Audio(
+  factory Audio.fromMap(Map map, {RegExp? artistSeparator}) => Audio(
         map["title"],
         map["artist"],
         map["album"],
@@ -392,6 +383,7 @@ class Audio {
         albumArtist: map['album_artist'],
         disc: map['disc'] ?? 0,
         discTotal: map['disc_total'] ?? 0,
+        artistSeparator: artistSeparator,
       );
 
   Map toMap() => {

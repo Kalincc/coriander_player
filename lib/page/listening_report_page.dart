@@ -28,14 +28,25 @@ class ListeningReportPage extends StatefulWidget {
 
 class _ListeningReportPageState extends State<ListeningReportPage> {
   _ReportRange _range = _ReportRange.week;
+  _ReportMetadata? _metadata;
+  int? _metadataRevision;
 
   PlaybackHistoryService? get _historyService =>
       widget.historyService ?? PlayService.instance.playbackHistoryService;
 
   DateTime get _now => (widget.now ?? DateTime.now)();
 
-  Iterable<Audio> get _audios =>
-      widget.audios ?? AudioLibrary.instance.audioCollection;
+  _ReportMetadata _reportMetadata() {
+    final audios = widget.audios;
+    if (audios != null) return _ReportMetadata.fromAudios(audios);
+    final revision = AudioLibrary.revision.value;
+    if (_metadataRevision != revision) {
+      _metadata =
+          _ReportMetadata.fromAudios(AudioLibrary.instance.audioCollection);
+      _metadataRevision = revision;
+    }
+    return _metadata!;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +59,6 @@ class _ListeningReportPageState extends State<ListeningReportPage> {
         body: Center(child: Text('听歌报告暂不可用')),
       );
     }
-
     return AnimatedBuilder(
       animation: historyService,
       builder: (context, _) => _ReportContent(
@@ -57,7 +67,7 @@ class _ListeningReportPageState extends State<ListeningReportPage> {
         period: _periodFor(_range, _now),
         events: historyService.events,
         recentEvents: historyService.recent20,
-        audios: _audios,
+        metadata: _reportMetadata(),
       ),
     );
   }
@@ -70,7 +80,7 @@ class _ReportContent extends StatelessWidget {
     required this.period,
     required this.events,
     required this.recentEvents,
-    required this.audios,
+    required this.metadata,
   });
 
   final _ReportRange range;
@@ -78,11 +88,10 @@ class _ReportContent extends StatelessWidget {
   final ReportPeriod period;
   final Iterable<PlaybackHistoryEvent> events;
   final Iterable<PlaybackHistoryEvent> recentEvents;
-  final Iterable<Audio> audios;
+  final _ReportMetadata metadata;
 
   @override
   Widget build(BuildContext context) {
-    final metadata = _ReportMetadata.fromAudios(audios);
     final report = buildListeningReport(events, period, metadata.audiosByPath);
     if (report.qualifiedPlayCount == 0) {
       return PageScaffold(
@@ -399,6 +408,7 @@ class _ReportMetadata {
     final audiosByPath = <String, Audio>{};
     final artistsByName = <String, Artist>{};
     final albumsByName = <String, Album>{};
+    final albumKeys = <(String, String), String>{};
 
     for (final audio in audios) {
       audiosByPath[audio.path] = audio;
@@ -408,13 +418,17 @@ class _ReportMetadata {
               audio.artist,
               () => Artist(name: audio.artist),
             );
-      final album = audio.album.trim().isEmpty
+      final albumKey = audio.album.trim().isEmpty
+          ? null
+          : albumKeys.putIfAbsent(
+              (audio.album, audio.effectiveAlbumArtist), () => audio.albumKey);
+      final album = albumKey == null
           ? null
           : albumsByName.putIfAbsent(
-              audio.albumKey,
+              albumKey,
               () => Album(
                   name: audio.album,
-                  id: audio.albumKey,
+                  id: albumKey,
                   albumArtist: audio.effectiveAlbumArtist),
             );
       artist?.works.add(audio);

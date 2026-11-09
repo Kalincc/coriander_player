@@ -28,7 +28,17 @@ class LyricViewController extends ChangeNotifier {
     Future<void> Function()? savePreference,
   })  : nowPlayingPagePref =
             preference ?? AppPreference.instance.nowPlayingPagePref,
-        _savePreference = savePreference ?? AppPreference.instance.save;
+        _savePreference = savePreference ?? AppPreference.instance.save {
+    nowPlayingPagePref.addListener(_handlePreferenceChanged);
+  }
+
+  void _handlePreferenceChanged() => notifyListeners();
+
+  @override
+  void dispose() {
+    nowPlayingPagePref.removeListener(_handlePreferenceChanged);
+    super.dispose();
+  }
 
   final NowPlayingPagePreference nowPlayingPagePref;
   final Future<void> Function() _savePreference;
@@ -68,7 +78,6 @@ class LyricViewController extends ChangeNotifier {
   void toggleTranslation() {
     nowPlayingPagePref.setShowTranslation(!showTranslation);
     unawaited(_savePreference());
-    notifyListeners();
   }
 
   void _setLyricOffsetMs(int value) {
@@ -77,7 +86,6 @@ class LyricViewController extends ChangeNotifier {
     if (lyricOffsetMs == previousValue) return;
 
     unawaited(_savePreference());
-    notifyListeners();
   }
 
   /// 在左对齐、居中、右对齐之间循环切换
