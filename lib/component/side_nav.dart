@@ -1,10 +1,8 @@
 // ignore_for_file: camel_case_types
 
-import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/component/responsive_builder.dart';
 import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 class DestinationDesc {
@@ -18,7 +16,6 @@ final destinations = <DestinationDesc>[
   DestinationDesc(Symbols.library_music, "音乐", app_paths.AUDIOS_PAGE),
   DestinationDesc(Symbols.artist, "艺术家", app_paths.ARTISTS_PAGE),
   DestinationDesc(Symbols.album, "专辑", app_paths.ALBUMS_PAGE),
-  DestinationDesc(Symbols.folder, "文件夹", app_paths.FOLDERS_PAGE),
   DestinationDesc(Symbols.list, "歌单", app_paths.PLAYLISTS_PAGE),
   DestinationDesc(Symbols.insights, "听歌报告", app_paths.LISTENING_REPORT_PAGE),
   DestinationDesc(Symbols.search, "搜索", app_paths.SEARCH_PAGE),
@@ -26,26 +23,18 @@ final destinations = <DestinationDesc>[
 ];
 
 class SideNav extends StatelessWidget {
-  const SideNav({super.key});
+  const SideNav({super.key, required this.selected, required this.onSelected});
+
+  final int selected;
+  final ValueChanged<int> onSelected;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final location = GoRouterState.of(context).uri.toString();
-    int selected = destinations.indexWhere(
-      (desc) => location.startsWith(desc.desPath),
-    );
-
     void onDestinationSelected(int value) {
-      if (value == selected) return;
-
-      final index = app_paths.START_PAGES.indexOf(destinations[value].desPath);
-      if (index != -1) AppPreference.instance.startPage = index;
-
-      context.push(destinations[value].desPath);
-
       var scaffold = Scaffold.of(context);
       if (scaffold.hasDrawer) scaffold.closeDrawer();
+      if (value != selected) onSelected(value);
     }
 
     return ResponsiveBuilder(

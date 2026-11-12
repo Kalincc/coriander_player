@@ -1,5 +1,6 @@
 // ignore_for_file: camel_case_types
 
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:coriander_player/app_preference.dart';
@@ -10,6 +11,7 @@ import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/component/responsive_builder.dart';
 import 'package:coriander_player/page/now_playing_page/component/current_playlist_view.dart';
 import 'package:coriander_player/page/now_playing_page/component/filled_icon_button_style.dart';
+import 'package:coriander_player/page/now_playing_page/component/now_playing_spectrum.dart';
 import 'package:coriander_player/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:coriander_player/play_service/play_service.dart';
@@ -80,17 +82,27 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     final theme = Theme.of(context);
     final brightness = theme.brightness;
     final scheme = theme.colorScheme;
+    final spectrum = AppPreference.instance.nowPlayingPagePref.spectrum;
 
     return Scaffold(
-      appBar: const PreferredSize(
-        preferredSize: Size.fromHeight(56.0),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(56.0),
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8.0),
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
           child: Row(
             children: [
-              NavBackBtn(),
-              Expanded(child: DragToMoveArea(child: SizedBox.expand())),
-              WindowControlls(),
+              const NavBackBtn(),
+              const Expanded(child: DragToMoveArea(child: SizedBox.expand())),
+              SpectrumMenu(
+                options: spectrum,
+                exclusive: playbackService.wasapiExclusive,
+                onChanged: (value) {
+                  if (spectrum.value == value) return;
+                  spectrum.value = value;
+                  unawaited(AppPreference.instance.save());
+                },
+              ),
+              const WindowControlls(),
             ],
           ),
         ),
@@ -100,23 +112,36 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         fit: StackFit.expand,
         alignment: AlignmentDirectional.center,
         children: [
-          if (nowPlayingCover != null) ...[
-            Image(
-              image: nowPlayingCover!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-            ),
-            switch (brightness) {
-              Brightness.dark => const ColoredBox(color: Colors.black45),
-              Brightness.light => const ColoredBox(color: Colors.white54),
-            },
-            BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 250, sigmaY: 250),
-              child: const ColoredBox(color: Colors.transparent),
-            ),
-          ],
+          NowPlayingSpectrum(
+            options: spectrum,
+            exclusive: playbackService.wasapiExclusive,
+            positions: playbackService.positionStream,
+            playerStates: playbackService.playerStateStream,
+            readSpectrum: playbackService.readSharedSpectrum,
+            fallback: nowPlayingCover == null
+                ? const SizedBox.shrink()
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image(
+                        image: nowPlayingCover!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                      ColoredBox(
+                        color: brightness == Brightness.dark
+                            ? Colors.black45
+                            : Colors.white54,
+                      ),
+                      BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 250, sigmaY: 250),
+                        child: const ColoredBox(color: Colors.transparent),
+                      ),
+                    ],
+                  ),
+          ),
           ChangeNotifierProvider.value(
-            value: PlayService.instance.playbackService,
+            value: playbackService,
             builder: (context, _) {
               return ResponsiveBuilder2(builder: (context, screenType) {
                 switch (screenType) {

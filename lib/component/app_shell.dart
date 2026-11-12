@@ -1,81 +1,72 @@
-// ignore_for_file: camel_case_types
-
+import 'package:coriander_player/app_paths.dart' as app_paths;
+import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/component/mini_now_playing.dart';
 import 'package:coriander_player/component/responsive_builder.dart';
 import 'package:coriander_player/component/side_nav.dart';
 import 'package:coriander_player/component/title_bar.dart';
+import 'package:coriander_player/page/search_page/search_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 
 class AppShell extends StatelessWidget {
-  const AppShell({super.key, required this.page});
+  const AppShell({
+    super.key,
+    required this.navigation,
+    this.nowPlaying = const MiniNowPlaying(),
+  });
 
-  final Widget page;
+  final StatefulNavigationShell navigation;
+  final Widget nowPlaying;
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveBuilder(
-      builder: (context, screenType) {
-        switch (screenType) {
-          case ScreenType.small:
-            return _AppShell_Small(page: page);
-          case ScreenType.medium:
-          case ScreenType.large:
-            return _AppShell_Large(page: page);
-        }
+    final scheme = Theme.of(context).colorScheme;
+    void select(int index) {
+      final path = destinations[index].desPath;
+      if (app_paths.START_PAGES.contains(path)) {
+        AppPreference.instance.startPage = path;
+      }
+      if (index != navigation.currentIndex) navigation.goBranch(index);
+      if (path == app_paths.SEARCH_PAGE) searchFocusRequest.value++;
+    }
+
+    void openSearch() => select(destinations.indexWhere(
+        (destination) => destination.desPath == app_paths.SEARCH_PAGE));
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+            openSearch,
       },
-    );
-  }
-}
-
-class _AppShell_Small extends StatelessWidget {
-  const _AppShell_Small({required this.page});
-
-  final Widget page;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      backgroundColor: scheme.surfaceContainer,
-      appBar: const PreferredSize(
-        preferredSize: Size.fromHeight(48.0),
-        child: TitleBar(),
-      ),
-      drawer: const SideNav(),
-      body: Stack(children: [page, const MiniNowPlaying()]),
-    );
-  }
-}
-
-class _AppShell_Large extends StatelessWidget {
-  const _AppShell_Large({required this.page});
-
-  final Widget page;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      backgroundColor: scheme.surfaceContainer,
-      appBar: const PreferredSize(
-        preferredSize: Size.fromHeight(48.0),
-        child: TitleBar(),
-      ),
-      body: Row(
-        children: [
-          const SideNav(),
-          Expanded(
-            child: Stack(children: [
-              ClipRRect(
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(8.0),
-                ),
-                child: page,
+      child: Focus(
+        autofocus: true,
+        child: ResponsiveBuilder(builder: (context, screenType) {
+          final small = screenType == ScreenType.small;
+          final nav =
+              SideNav(selected: navigation.currentIndex, onSelected: select);
+          return Scaffold(
+            backgroundColor: scheme.surfaceContainer,
+            appBar: PreferredSize(
+              preferredSize: const Size.fromHeight(48),
+              child: TitleBar(onSearch: openSearch),
+            ),
+            drawer: small ? nav : null,
+            body: Row(children: [
+              if (!small) nav,
+              Expanded(
+                child: Stack(children: [
+                  ClipRRect(
+                    borderRadius:
+                        const BorderRadius.only(topLeft: Radius.circular(8)),
+                    child: navigation,
+                  ),
+                  nowPlaying,
+                ]),
               ),
-              const MiniNowPlaying()
             ]),
-          ),
-        ],
+          );
+        }),
       ),
     );
   }

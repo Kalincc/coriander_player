@@ -6,21 +6,23 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 class ArtistSeparatorEditor extends StatelessWidget {
-  const ArtistSeparatorEditor({super.key});
+  const ArtistSeparatorEditor({super.key, required this.enabled});
+
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "自定义艺术家分隔符",
+      description: enabled ? '自定义艺术家分隔符' : '扫描期间暂不能修改艺术家分隔符',
       action: FilledButton.icon(
         icon: const Icon(Symbols.edit),
         label: const Text("管理艺术家分隔符"),
-        onPressed: () {
-          showDialog(
-            context: context,
-            builder: (context) => const _ArtistSeparatorEditDialog(),
-          );
-        },
+        onPressed: enabled
+            ? () => showDialog<void>(
+                  context: context,
+                  builder: (_) => const _ArtistSeparatorEditDialog(),
+                )
+            : null,
       ),
     );
   }

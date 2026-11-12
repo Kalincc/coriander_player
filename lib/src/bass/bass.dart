@@ -62,6 +62,10 @@ const int BASS_ACTIVE_STALLED = 2;
 
 const int BASS_ATTRIB_VOLDSP = 19;
 
+const int BASS_ATTRIB_FREQ = 1;
+
+const int BASS_DATA_FFT2048 = 0x80000003;
+
 const int BASS_DEVICE_REINIT = 128;
 
 const int BASS_ERROR_DEVICE = 23;

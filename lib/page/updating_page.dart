@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/audio_library.dart';
@@ -114,7 +113,7 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
         return;
       }
       if (mounted) {
-        context.go(app_paths.START_PAGES[AppPreference.instance.startPage]);
+        context.go(AppPreference.instance.startPage);
       }
     } catch (error, trace) {
       if (mounted) setState(() => _error = error);

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:coriander_player/app_paths.dart' as app_paths;
 import 'package:coriander_player/app_settings.dart';
 import 'package:coriander_player/library/audio_path_key.dart';
 import 'package:coriander_player/page/now_playing_page/component/lyric_view_controls.dart';
@@ -31,6 +32,18 @@ class PagePreference {
       );
 }
 
+enum SpectrumStyle {
+  off('关闭'),
+  bars('柱状图'),
+  mirror('镜像反射'),
+  circle('圆形');
+
+  const SpectrumStyle(this.label);
+  final String label;
+}
+
+typedef SpectrumOptions = ({SpectrumStyle style, bool particles});
+
 class NowPlayingPagePreference extends ChangeNotifier {
   NowPlayingViewMode nowPlayingViewMode;
   LyricTextAlign lyricTextAlign;
@@ -38,6 +51,7 @@ class NowPlayingPagePreference extends ChangeNotifier {
   double translationFontSize;
   int lyricOffsetMs;
   bool showTranslation;
+  final ValueNotifier<SpectrumOptions> spectrum;
   final Map<String, int> _lyricOffsetsByPath;
   String? _activeAudioPath;
 
@@ -49,7 +63,9 @@ class NowPlayingPagePreference extends ChangeNotifier {
     int lyricOffsetMs = 0,
     this.showTranslation = true,
     Map<String, int> lyricOffsetsByPath = const {},
-  })  : lyricOffsetMs = clampLyricOffsetMs(lyricOffsetMs),
+    SpectrumOptions spectrum = (style: SpectrumStyle.off, particles: true),
+  })  : spectrum = ValueNotifier(spectrum),
+        lyricOffsetMs = clampLyricOffsetMs(lyricOffsetMs),
         _lyricOffsetsByPath = {
           for (final entry in lyricOffsetsByPath.entries)
             audioPathKey(entry.key): clampLyricOffsetMs(entry.value),
@@ -62,12 +78,15 @@ class NowPlayingPagePreference extends ChangeNotifier {
         "translationFontSize": translationFontSize,
         "lyricOffsetMs": lyricOffsetMs,
         "showTranslation": showTranslation,
+        "spectrumStyle": spectrum.value.style.name,
+        "spectrumParticles": spectrum.value.particles,
         "lyricOffsetsByPath": Map<String, int>.from(_lyricOffsetsByPath),
       };
 
   factory NowPlayingPagePreference.fromMap(Map map) {
     final rawOffset = map["lyricOffsetMs"];
     final rawShowTranslation = map["showTranslation"];
+    final rawParticles = map['spectrumParticles'];
     return NowPlayingPagePreference(
       NowPlayingViewMode.fromString(map["nowPlayingViewMode"]) ??
           NowPlayingViewMode.withLyric,
@@ -77,6 +96,13 @@ class NowPlayingPagePreference extends ChangeNotifier {
       lyricOffsetMs:
           rawOffset is num ? clampLyricOffsetMs(rawOffset.toInt()) : 0,
       showTranslation: rawShowTranslation is bool ? rawShowTranslation : true,
+      spectrum: (
+        style: SpectrumStyle.values.firstWhere(
+          (style) => style.name == map['spectrumStyle'],
+          orElse: () => SpectrumStyle.off,
+        ),
+        particles: rawParticles is bool ? rawParticles : true,
+      ),
       lyricOffsetsByPath: {
         if (map['lyricOffsetsByPath'] is Map)
           for (final entry in (map['lyricOffsetsByPath'] as Map).entries)
@@ -115,6 +141,12 @@ class NowPlayingPagePreference extends ChangeNotifier {
     if (showTranslation == value) return;
     showTranslation = value;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    spectrum.dispose();
+    super.dispose();
   }
 }
 
@@ -163,7 +195,19 @@ class AppPreference {
   var playlistDetailPagePref =
       PagePreference(0, SortOrder.ascending, ContentView.list);
 
-  int startPage = 0;
+  String startPage = app_paths.AUDIOS_PAGE;
+  final recentSearches = ValueNotifier<List<String>>(const []);
+
+  void rememberSearch(String query) {
+    final term = query.trim();
+    if (term.isEmpty) return;
+    recentSearches.value = List.unmodifiable([
+      term,
+      ...recentSearches.value
+          .where((item) => item.toLowerCase() != term.toLowerCase())
+          .take(7),
+    ]);
+  }
 
   var playbackPref = PlaybackPreference(PlayMode.forward, 1.0);
 
@@ -194,7 +238,11 @@ class AppPreference {
         "folderDetailPagePref": folderDetailPagePref.toMap(),
         "playlistsPagePref": playlistsPagePref.toMap(),
         "playlistDetailPagePref": playlistDetailPagePref.toMap(),
-        "startPage": startPage,
+        "startPagePath": startPage,
+        "startPage": startPage == app_paths.PLAYLISTS_PAGE
+            ? 4
+            : app_paths.START_PAGES.indexOf(startPage),
+        "recentSearches": recentSearches.value,
         "playbackPref": playbackPref.toMap(),
         "nowPlayingPagePref": nowPlayingPagePref.toMap(),
       };
@@ -240,7 +288,16 @@ class AppPreference {
       instance.playlistDetailPagePref = PagePreference.fromMap(
         prefMap["playlistDetailPagePref"],
       );
-      instance.startPage = prefMap["startPage"];
+      instance.startPage = app_paths.restoreStartPage(
+          prefMap['startPagePath'], prefMap['startPage']);
+      final recent = prefMap['recentSearches'];
+      instance.recentSearches.value = recent is List
+          ? List.unmodifiable(recent
+              .whereType<String>()
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)
+              .take(8))
+          : const [];
       instance.playbackPref =
           PlaybackPreference.fromMap(prefMap["playbackPref"]);
       instance.nowPlayingPagePref =

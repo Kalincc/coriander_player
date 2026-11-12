@@ -34,6 +34,15 @@ const List<String> START_PAGES = [
   AUDIOS_PAGE,
   ARTISTS_PAGE,
   ALBUMS_PAGE,
-  FOLDERS_PAGE,
   PLAYLISTS_PAGE
 ];
+
+String restoreStartPage(Object? path, Object? legacyIndex) {
+  if (path is String && START_PAGES.contains(path)) return path;
+  return switch (legacyIndex) {
+    1 => ARTISTS_PAGE,
+    2 => ALBUMS_PAGE,
+    4 => PLAYLISTS_PAGE,
+    _ => AUDIOS_PAGE,
+  };
+}

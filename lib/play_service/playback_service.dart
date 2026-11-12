@@ -360,6 +360,9 @@ class PlaybackService extends ChangeNotifier
 
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
 
+  double? readSharedSpectrum(Float32List bins) =>
+      _player.readSharedSpectrum(bins);
+
   /// 1. 更新 [_playlistIndex] 为 [audioIndex]
   /// 2. 更新 [nowPlaying] 为 playlist[_nowPlayingIndex]
   /// 3. _bassPlayer.setSource

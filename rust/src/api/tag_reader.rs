@@ -3,7 +3,7 @@ use std::{
     fs::{self},
     io::{self, Cursor, Write},
     path::{Path, PathBuf},
-    time::{Duration, UNIX_EPOCH},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use image::imageops;
@@ -50,6 +50,38 @@ pub struct IndexActionState {
 
     /// describe action state
     pub message: String,
+}
+
+struct ScanStatus<'a> {
+    sink: &'a StreamSink<IndexActionState>,
+    cancel_marker: &'a Path,
+    files: u64,
+    songs: u64,
+    last_report: Option<Instant>,
+}
+
+impl ScanStatus<'_> {
+    fn check_cancelled(&self) -> io::Result<()> {
+        if self.cancel_marker.try_exists()? {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "scan cancelled"));
+        }
+        Ok(())
+    }
+
+    fn report(&mut self, folder: &Path) {
+        // Traversal has no known total. Report counts, not a jumping percentage.
+        if self.last_report.is_some_and(|last| last.elapsed() < Duration::from_millis(150)) {
+            return;
+        }
+        self.last_report = Some(Instant::now());
+        let _ = self.sink.add(IndexActionState {
+            progress: -1.0,
+            message: format!(
+                "已检查 {} 个文件 · 找到 {} 首歌曲\n{}",
+                self.files, self.songs, folder.display()
+            ),
+        });
+    }
 }
 
 #[derive(Debug)]
@@ -404,11 +436,10 @@ impl AudioFolder {
     fn read_from_folder_recursively(
         folder: impl AsRef<Path>,
         result: &mut Vec<Self>,
-        scaned_count: &mut u64,
-        total_count: &mut u64,
         scaned_folders: &mut HashSet<String>,
-        sink: &StreamSink<IndexActionState>,
+        status: &mut ScanStatus<'_>,
     ) -> Result<(), io::Error> {
+        status.check_cancelled()?;
         let folder = folder.as_ref();
         if scaned_folders.contains(&folder.to_string_lossy().to_string()) {
             return Ok(());
@@ -416,16 +447,14 @@ impl AudioFolder {
 
         let dir = read_directory_strictly(folder)?;
 
-        let _ = sink.add(IndexActionState {
-            progress: *scaned_count as f64 / *total_count as f64,
-            message: String::from("正在扫描 ") + &folder.to_string_lossy(),
-        });
+        status.report(folder);
 
         scaned_folders.insert(folder.to_string_lossy().to_string());
         let mut audios: Vec<Audio> = vec![];
         let mut latest: u64 = 0;
 
         for item in dir {
+            status.check_cancelled()?;
             let entry = item.map_err(|err| {
                 log_to_dart(err.to_string());
                 err
@@ -437,21 +466,20 @@ impl AudioFolder {
             })?;
 
             if file_type.is_dir() {
-                *total_count += 1;
                 Self::read_from_folder_recursively(
                     entry.path(),
                     result,
-                    scaned_count,
-                    total_count,
                     scaned_folders,
-                    sink,
+                    status,
                 )?;
-            } else if let Some(metadata) = Audio::read_from_path(entry.path()) {
-                if metadata.created > latest {
-                    latest = metadata.created;
+            } else {
+                status.files += 1;
+                if let Some(metadata) = Audio::read_from_path(entry.path()) {
+                    latest = latest.max(metadata.created);
+                    audios.push(metadata);
+                    status.songs += 1;
                 }
-
-                audios.push(metadata);
+                status.report(folder);
             }
         }
 
@@ -474,12 +502,6 @@ impl AudioFolder {
                 audios,
             });
         }
-
-        *scaned_count += 1;
-        let _ = sink.add(IndexActionState {
-            progress: *scaned_count as f64 / *total_count as f64,
-            message: String::new(),
-        });
 
         Ok(())
     }
@@ -959,25 +981,36 @@ pub fn build_index_from_folders_recursively(
     index_path: String,
     sink: StreamSink<IndexActionState>,
 ) -> Result<(), io::Error> {
-    with_valid_scan_roots(&folders, || {
+    let outcome = with_valid_scan_roots(&folders, || {
         let mut audio_folders: Vec<AudioFolder> = vec![];
-        let mut scaned: u64 = 0;
-        let mut total: u64 = folders.len() as u64;
         let mut scaned_folders: HashSet<String> = HashSet::new();
+        let output_directory = PathBuf::from(index_path);
+        let cancel_marker = output_directory.join(".scan-cancel");
+        let mut status = ScanStatus {
+            sink: &sink,
+            cancel_marker: &cancel_marker,
+            files: 0,
+            songs: 0,
+            last_report: None,
+        };
 
         for item in &folders {
             AudioFolder::read_from_folder_recursively(
                 Path::new(item),
                 &mut audio_folders,
-                &mut scaned,
-                &mut total,
                 &mut scaned_folders,
-                &sink,
+                &mut status,
             )?;
         }
 
+        status.check_cancelled()?;
+        let _ = sink.add(IndexActionState {
+            progress: -1.0,
+            message: format!("找到 {} 首歌曲，正在生成索引…", status.songs),
+        });
         let mut audio_folders_json: Vec<serde_json::Value> = vec![];
         for item in &audio_folders {
+            status.check_cancelled()?;
             audio_folders_json.push(item.to_json_value());
         }
         let normalized_roots: Vec<String> = folders
@@ -990,12 +1023,22 @@ pub fn build_index_from_folders_recursively(
             "folders": audio_folders_json,
         });
 
-        let mut index_path = PathBuf::from(index_path);
-        index_path.push("index.json");
+        status.check_cancelled()?;
+        let index_path = output_directory.join("index.json");
         write_index_atomically(&index_path, &json_value)?;
+        let _ = sink.add(IndexActionState {
+            progress: 1.0,
+            message: format!("扫描完成，共 {} 首歌曲", status.songs),
+        });
 
         Ok(())
-    })
+    });
+    // The generated Dart wrapper exposes the sink, not the FFI call's Future.
+    // Deliver scan errors on that stream so they cannot escape the UI handler.
+    if let Err(error) = outcome {
+        let _ = sink.add_error(anyhow::Error::new(error));
+    }
+    Ok(())
 }
 
 fn with_valid_scan_roots<T>(

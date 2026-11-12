@@ -6,8 +6,6 @@ import 'package:coriander_player/page/artist_detail_page.dart';
 import 'package:coriander_player/page/artists_page.dart';
 import 'package:coriander_player/page/audio_detail_page.dart';
 import 'package:coriander_player/page/audios_page.dart';
-import 'package:coriander_player/page/folder_detail_page.dart';
-import 'package:coriander_player/page/folders_page.dart';
 import 'package:coriander_player/page/listening_report_page.dart';
 import 'package:coriander_player/page/now_playing_page/page.dart';
 import 'package:coriander_player/page/playlist_detail_page.dart';
@@ -124,143 +122,140 @@ class Entry extends StatelessWidget {
     initialLocation:
         welcome ? app_paths.WELCOMING_PAGE : app_paths.UPDATING_DIALOG,
     routes: [
-      ShellRoute(
-        builder: (context, state, page) => AppShell(page: page),
-        routes: [
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigation) =>
+            AppShell(navigation: navigation),
+        branches: [
           /// audios page
-          GoRoute(
-            path: app_paths.AUDIOS_PAGE,
-            pageBuilder: (context, state) {
-              if (state.extra != null) {
-                return SlideTransitionPage(
-                    child: AudiosPage(locateTo: state.extra as Audio));
-              }
-              return const SlideTransitionPage(child: AudiosPage());
-            },
-            routes: [
-              GoRoute(
-                path: "detail",
-                pageBuilder: (context, state) => SlideTransitionPage(
-                  child: AudioDetailPage(audio: state.extra as Audio),
-                ),
-              ),
-            ],
-          ),
-
-          /// artists page
-          GoRoute(
-            path: app_paths.ARTISTS_PAGE,
-            pageBuilder: (context, state) => const SlideTransitionPage(
-              child: ArtistsPage(),
-            ),
-            routes: [
-              GoRoute(
-                path: "detail",
-                pageBuilder: (context, state) => SlideTransitionPage(
-                  child: ArtistDetailPage(artist: state.extra as Artist),
-                ),
-              ),
-            ],
-          ),
-
-          /// albums page
-          GoRoute(
-            path: app_paths.ALBUMS_PAGE,
-            pageBuilder: (context, state) => const SlideTransitionPage(
-              child: AlbumsPage(),
-            ),
-            routes: [
-              GoRoute(
-                path: "detail",
-                pageBuilder: (context, state) => SlideTransitionPage(
-                  child: AlbumDetailPage(album: state.extra as Album),
-                ),
-              ),
-            ],
-          ),
-
-          /// folders page
-          GoRoute(
-            path: app_paths.FOLDERS_PAGE,
-            pageBuilder: (context, state) => const SlideTransitionPage(
-              child: FoldersPage(),
-            ),
-            routes: [
-              /// folder detail page
-              GoRoute(
-                path: "detail",
-                pageBuilder: (context, state) {
-                  final folder = state.extra as AudioFolder;
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: app_paths.AUDIOS_PAGE,
+              pageBuilder: (context, state) {
+                if (state.extra != null) {
                   return SlideTransitionPage(
-                    child: FolderDetailPage(folder: folder),
-                  );
-                },
-              ),
-            ],
-          ),
-
-          /// playlists page
-          GoRoute(
-            path: app_paths.PLAYLISTS_PAGE,
-            pageBuilder: (context, state) => const SlideTransitionPage(
-              child: PlaylistsPage(),
-            ),
-            routes: [
-              GoRoute(
-                path: "detail",
-                pageBuilder: (context, state) {
-                  final playlist = state.extra as Playlist;
-                  return SlideTransitionPage(
-                    child: PlaylistDetailPage(playlist: playlist),
-                  );
-                },
-              ),
-            ],
-          ),
-
-          /// search page
-          GoRoute(
-            path: app_paths.SEARCH_PAGE,
-            pageBuilder: (context, state) => const SlideTransitionPage(
-              child: SearchPage(),
-            ),
-            routes: [
-              GoRoute(
-                path: "result",
-                pageBuilder: (context, state) {
-                  final query = state.extra as String;
-                  return SlideTransitionPage(
-                    child: SearchResultPage(initialQuery: query),
-                  );
-                },
-              ),
-            ],
-          ),
-
-          /// listening report page
-          GoRoute(
-            path: app_paths.LISTENING_REPORT_PAGE,
-            pageBuilder: (context, state) => const SlideTransitionPage(
-              child: ListeningReportPage(),
-            ),
-          ),
-
-          /// settings page
-          GoRoute(
-              path: app_paths.SETTINGS_PAGE,
-              pageBuilder: (context, state) => const SlideTransitionPage(
-                    child: SettingsPage(),
-                  ),
+                      child: AudiosPage(locateTo: state.extra as Audio));
+                }
+                return const SlideTransitionPage(child: AudiosPage());
+              },
               routes: [
                 GoRoute(
-                  path: "issue",
-                  pageBuilder: (context, state) => const SlideTransitionPage(
-                    child: SettingsIssuePage(),
+                  path: "detail",
+                  pageBuilder: (context, state) => SlideTransitionPage(
+                    child: AudioDetailPage(audio: state.extra as Audio),
                   ),
-                )
-              ]),
+                ),
+              ],
+            )
+          ]),
+
+          /// artists page
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: app_paths.ARTISTS_PAGE,
+              pageBuilder: (context, state) => const SlideTransitionPage(
+                child: ArtistsPage(),
+              ),
+              routes: [
+                GoRoute(
+                  path: "detail",
+                  pageBuilder: (context, state) => SlideTransitionPage(
+                    child: ArtistDetailPage(artist: state.extra as Artist),
+                  ),
+                ),
+              ],
+            )
+          ]),
+
+          /// albums page
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: app_paths.ALBUMS_PAGE,
+              pageBuilder: (context, state) => const SlideTransitionPage(
+                child: AlbumsPage(),
+              ),
+              routes: [
+                GoRoute(
+                  path: "detail",
+                  pageBuilder: (context, state) => SlideTransitionPage(
+                    child: AlbumDetailPage(album: state.extra as Album),
+                  ),
+                ),
+              ],
+            )
+          ]),
+
+          /// playlists page
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: app_paths.PLAYLISTS_PAGE,
+              pageBuilder: (context, state) => const SlideTransitionPage(
+                child: PlaylistsPage(),
+              ),
+              routes: [
+                GoRoute(
+                  path: "detail",
+                  pageBuilder: (context, state) {
+                    final playlist = state.extra as Playlist;
+                    return SlideTransitionPage(
+                      child: PlaylistDetailPage(playlist: playlist),
+                    );
+                  },
+                ),
+              ],
+            )
+          ]),
+
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: app_paths.LISTENING_REPORT_PAGE,
+              pageBuilder: (context, state) => const SlideTransitionPage(
+                child: ListeningReportPage(),
+              ),
+            )
+          ]),
+
+          /// search page
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: app_paths.SEARCH_PAGE,
+              pageBuilder: (context, state) => const SlideTransitionPage(
+                child: SearchPage(),
+              ),
+              routes: [
+                GoRoute(
+                  path: "result",
+                  pageBuilder: (context, state) {
+                    final query = state.extra as String;
+                    return SlideTransitionPage(
+                      child: SearchResultPage(initialQuery: query),
+                    );
+                  },
+                ),
+              ],
+            )
+          ]),
+
+          /// settings page
+          StatefulShellBranch(routes: [
+            GoRoute(
+                path: app_paths.SETTINGS_PAGE,
+                pageBuilder: (context, state) => const SlideTransitionPage(
+                      child: SettingsPage(),
+                    ),
+                routes: [
+                  GoRoute(
+                    path: "issue",
+                    pageBuilder: (context, state) => const SlideTransitionPage(
+                      child: SettingsIssuePage(),
+                    ),
+                  )
+                ])
+          ]),
         ],
       ),
+
+      for (final path in [app_paths.FOLDERS_PAGE, app_paths.FOLDER_DETAIL_PAGE])
+        GoRoute(path: path, redirect: (_, __) => app_paths.AUDIOS_PAGE),
 
       /// now playing page
       GoRoute(

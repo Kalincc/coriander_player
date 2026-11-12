@@ -1,4 +1,5 @@
 import 'package:coriander_player/app_paths.dart' as app_paths;
+import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/artist_name_normalizer.dart';
@@ -67,62 +68,147 @@ class UnionSearchResult {
   }
 }
 
-final SEARCH_BAR_KEY = GlobalKey();
+final searchFocusRequest = ValueNotifier(0);
+
+class LocalSearchField extends StatefulWidget {
+  const LocalSearchField({
+    super.key,
+    this.controller,
+    this.autofocus = false,
+    required this.onSubmitted,
+    required this.suffix,
+  });
+
+  final TextEditingController? controller;
+  final bool autofocus;
+  final ValueChanged<String> onSubmitted;
+  final Widget suffix;
+
+  @override
+  State<LocalSearchField> createState() => _LocalSearchFieldState();
+}
+
+class _LocalSearchFieldState extends State<LocalSearchField> {
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    searchFocusRequest.addListener(_focusWhenVisible);
+  }
+
+  void _focusWhenVisible() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          TickerMode.of(context) &&
+          ModalRoute.isCurrentOf(context) != false) {
+        _focus.requestFocus();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    searchFocusRequest.removeListener(_focusWhenVisible);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Focus(
+        onFocusChange: HotkeysHelper.onFocusChanges,
+        child: Hero(
+          tag: 'local-search-input',
+          child: Material(
+            type: MaterialType.transparency,
+            child: TextField(
+              focusNode: _focus,
+              controller: widget.controller,
+              autofocus: widget.autofocus,
+              decoration: InputDecoration(
+                suffixIcon: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: widget.suffix,
+                ),
+                hintText: '搜索歌曲、艺术家、专辑、歌词',
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: widget.onSubmitted,
+            ),
+          ),
+        ),
+      );
+}
 
 class SearchPage extends StatelessWidget {
   const SearchPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final preference = AppPreference.instance;
+    void search(String query) {
+      final term = query.trim();
+      if (term.isEmpty) return;
+      preference.rememberSearch(term);
+      context.push(app_paths.SEARCH_RESULT_PAGE, extra: term);
+    }
 
     return ColoredBox(
-      color: scheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              "搜索",
-              style: TextStyle(
-                color: scheme.onSurface,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const Padding(padding: EdgeInsets.only(bottom: 32.0)),
-            SizedBox(
-              width: 400,
-              child: Focus(
-                onFocusChange: HotkeysHelper.onFocusChanges,
-                child: Hero(
-                  tag: SEARCH_BAR_KEY,
-                  child: TextField(
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      suffixIcon: Padding(
-                        padding: EdgeInsets.only(right: 12.0),
-                        child: Icon(Symbols.search),
-                      ),
-                      hintText: "搜索歌曲、艺术家、专辑、歌词",
-                      border: OutlineInputBorder(),
-                    ),
-
-                    /// when 'enter' is pressed
-                    onSubmitted: (String query) {
-                      final normalizedQuery = query.trim();
-                      if (normalizedQuery.isEmpty) return;
-                      context.push(
-                        app_paths.SEARCH_RESULT_PAGE,
-                        extra: normalizedQuery,
-                      );
-                    },
-                  ),
+      color: theme.colorScheme.surface,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('搜索', style: theme.textTheme.headlineSmall),
+                const SizedBox(height: 16),
+                LocalSearchField(
+                  autofocus: true,
+                  suffix: const Icon(Symbols.search),
+                  onSubmitted: search,
                 ),
-              ),
+                ValueListenableBuilder<List<String>>(
+                  valueListenable: preference.recentSearches,
+                  builder: (context, terms, _) => terms.isEmpty
+                      ? const SizedBox.shrink()
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('最近搜索'),
+                                TextButton(
+                                  onPressed: () {
+                                    preference.recentSearches.value = const [];
+                                    preference.save();
+                                  },
+                                  child: const Text('清空记录'),
+                                ),
+                              ],
+                            ),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                for (final term in terms)
+                                  ActionChip(
+                                    label: Text(term,
+                                        overflow: TextOverflow.ellipsis),
+                                    onPressed: () => search(term),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

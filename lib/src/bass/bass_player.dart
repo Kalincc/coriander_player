@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/runtime_diagnostic_log.dart';
 import 'package:coriander_player/src/bass/bass_wasapi.dart' as BASS;
@@ -108,6 +109,8 @@ class PlaybackHealthMonitor {
 }
 
 class BassPlayer implements OutputModeOperations {
+  static const spectrumBinCount = 1024;
+
   late final ffi.DynamicLibrary _bassLib;
   late final ffi.DynamicLibrary _bassWasapiLib;
   late final BASS.Bass _bass;
@@ -115,6 +118,9 @@ class BassPlayer implements OutputModeOperations {
 
   String? _fPath;
   int? _fstream;
+  bool _isDecodeStream = false;
+  ffi.Pointer<ffi.Float>? _fftBuffer;
+  Float32List? _fftView;
 
   /// 是否启用 wasapi 独占模式
   bool wasapiExclusive = false;
@@ -190,6 +196,32 @@ class BassPlayer implements OutputModeOperations {
 
   Stream<PlayerState> get playerStateStream =>
       _playerStateStreamController.stream;
+
+  /// Copies FFT magnitudes into a reusable [bins] buffer and returns the Hz
+  /// sample rate. Never read a decoding channel: that would consume samples.
+  double? readSharedSpectrum(Float32List bins) {
+    final handle = _fstream;
+    if (handle == null ||
+        wasapiExclusive ||
+        _isDecodeStream ||
+        _positionStreamController.isClosed ||
+        _bass.BASS_ChannelIsActive(handle) != BASS.BASS_ACTIVE_PLAYING) {
+      return null;
+    }
+    final buffer = _fftBuffer ??= ffi.calloc<ffi.Float>(spectrumBinCount);
+    if (_bass.BASS_ChannelGetAttribute(handle, BASS.BASS_ATTRIB_FREQ, buffer) ==
+        BASS.FALSE) {
+      return null;
+    }
+    final rate = buffer.value;
+    if (!rate.isFinite || rate <= 0) return null;
+    final bytes = _bass.BASS_ChannelGetData(
+        handle, buffer.cast(), BASS.BASS_DATA_FFT2048);
+    if (bytes <= 0 || bytes == 0xffffffff) return null;
+    bins.setRange(0, spectrumBinCount,
+        _fftView ??= buffer.asTypedList(spectrumBinCount));
+    return rate;
+  }
 
   void _updatePosition() {
     final progress = position;
@@ -389,16 +421,18 @@ class BassPlayer implements OutputModeOperations {
     const flags =
         BASS.BASS_UNICODE | BASS.BASS_SAMPLE_FLOAT | BASS.BASS_ASYNCFILE;
     const exclusiveFlags = flags | BASS.BASS_STREAM_DECODE;
+    final decode = wasapiExclusive;
     final handle = _bass.BASS_StreamCreateFile(
       BASS.FALSE,
       pathPointer,
       0,
       0,
-      wasapiExclusive ? exclusiveFlags : flags,
+      decode ? exclusiveFlags : flags,
     );
 
     if (handle != 0) {
       _fstream = handle;
+      _isDecodeStream = decode;
       _fPath = path;
     } else {
       _fstream = null;
@@ -658,6 +692,13 @@ class BassPlayer implements OutputModeOperations {
           throw const FormatException(
               "The device is currently being reinitialized.");
       }
+    }
+
+    final fftBuffer = _fftBuffer;
+    if (fftBuffer != null) {
+      _fftBuffer = null;
+      _fftView = null;
+      ffi.calloc.free(fftBuffer);
     }
 
     _bassWasapiLib.close();

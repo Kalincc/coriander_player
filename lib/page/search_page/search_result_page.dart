@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:coriander_player/app_paths.dart' as app_paths;
+import 'package:coriander_player/app_preference.dart';
 import 'package:coriander_player/component/album_tile.dart';
 import 'package:coriander_player/component/artist_tile.dart';
 import 'package:coriander_player/component/audio_tile.dart';
 import 'package:coriander_player/component/lyric_search_result_tile.dart';
-import 'package:coriander_player/hotkeys_helper.dart';
 import 'package:coriander_player/library/lyric_search_index.dart';
 import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/page/search_page/local_search_controller.dart';
@@ -113,32 +113,20 @@ class _SearchResultPageState extends State<SearchResultPage> {
           length: 5,
           child: Column(
             children: [
-              Focus(
-                onFocusChange: HotkeysHelper.onFocusChanges,
-                child: Hero(
-                  tag: SEARCH_BAR_KEY,
-                  child: ValueListenableBuilder<LocalSearchState>(
-                    valueListenable: searchController,
-                    builder: (context, state, _) => TextField(
-                      controller: searchBarController,
-                      decoration: InputDecoration(
-                        suffixIcon: Padding(
-                          padding: const EdgeInsets.only(right: 12),
-                          child: state.isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Symbols.search),
-                        ),
-                        hintText: '搜索歌曲、艺术家、专辑、歌词',
-                        border: const OutlineInputBorder(),
-                      ),
-                      onSubmitted: (_) => _runSearch(),
-                    ),
-                  ),
+              ValueListenableBuilder<LocalSearchState>(
+                valueListenable: searchController,
+                builder: (context, state, _) => LocalSearchField(
+                  controller: searchBarController,
+                  suffix: state.isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Symbols.search),
+                  onSubmitted: (term) {
+                    AppPreference.instance.rememberSearch(term);
+                    _runSearch();
+                  },
                 ),
               ),
               const SizedBox(height: 8),
@@ -322,6 +310,9 @@ class _SearchResultPageBody extends StatelessWidget {
         break;
     }
     slivers.add(const SliverPadding(padding: EdgeInsets.only(bottom: 96)));
-    return CustomScrollView(slivers: slivers);
+    return CustomScrollView(
+      key: PageStorageKey((result.query, filter)),
+      slivers: slivers,
+    );
   }
 }

@@ -11,6 +11,30 @@ NowPlayingPagePreference newPreference() => NowPlayingPagePreference(
     );
 
 void main() {
+  test('spectrum is opt-in and remembers style and particle choice', () {
+    final preference = newPreference();
+    addTearDown(preference.dispose);
+    expect(preference.spectrum.value.style, SpectrumStyle.off);
+    final oldMap = preference.toMap()
+      ..remove('spectrumStyle')
+      ..remove('spectrumParticles');
+    final old = NowPlayingPagePreference.fromMap(oldMap);
+    final malformed = NowPlayingPagePreference.fromMap({
+      ...oldMap,
+      'spectrumStyle': 'invalid',
+      'spectrumParticles': 'invalid',
+    });
+    for (final restored in [old, malformed]) {
+      addTearDown(restored.dispose);
+      expect(
+          restored.spectrum.value, (style: SpectrumStyle.off, particles: true));
+    }
+    preference.spectrum.value = (style: SpectrumStyle.circle, particles: false);
+    final saved = NowPlayingPagePreference.fromMap(preference.toMap());
+    addTearDown(saved.dispose);
+    expect(saved.spectrum.value, preference.spectrum.value);
+  });
+
   test('uses default lyric display preferences', () {
     final preference = newPreference();
 

@@ -1,14 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:coriander_player/library/library_update_coordinator.dart';
 import 'package:coriander_player/src/rust/api/tag_reader.dart';
 import 'package:coriander_player/utils.dart';
 import 'package:flutter/material.dart';
-
-typedef BuildIndexStream = Stream<IndexActionState> Function({
-  required List<String> folders,
-  required String indexPath,
-});
 
 class BuildIndexStateView extends StatefulWidget {
   const BuildIndexStateView(
@@ -80,12 +76,14 @@ class _BuildIndexStateViewState extends State<BuildIndexStateView> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             LinearProgressIndicator(
-              value: snapshot.data?.progress,
+              value: scanIndicatorValue(snapshot.data),
               borderRadius: BorderRadius.circular(2.0),
             ),
             const SizedBox(height: 8.0),
             Text(
-              _error == null ? "${snapshot.data?.message}" : '索引创建失败：$_error',
+              _error == null
+                  ? (snapshot.data?.message ?? '正在准备扫描…')
+                  : '索引创建失败：$_error',
               style: TextStyle(color: scheme.onSurface),
             ),
           ],

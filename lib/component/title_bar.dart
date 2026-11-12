@@ -9,7 +9,9 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:window_manager/window_manager.dart';
 
 class TitleBar extends StatelessWidget {
-  const TitleBar({super.key});
+  const TitleBar({super.key, this.onSearch});
+
+  final VoidCallback? onSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -17,11 +19,11 @@ class TitleBar extends StatelessWidget {
       builder: (context, screenType) {
         switch (screenType) {
           case ScreenType.small:
-            return const _TitleBar_Small();
+            return _TitleBar_Small(onSearch);
           case ScreenType.medium:
-            return const _TitleBar_Medium();
+            return _TitleBar_Medium(onSearch);
           case ScreenType.large:
-            return const _TitleBar_Large();
+            return _TitleBar_Large(onSearch);
         }
       },
     );
@@ -29,7 +31,8 @@ class TitleBar extends StatelessWidget {
 }
 
 class _TitleBar_Small extends StatelessWidget {
-  const _TitleBar_Small();
+  const _TitleBar_Small(this.onSearch);
+  final VoidCallback? onSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +58,7 @@ class _TitleBar_Small extends StatelessWidget {
                 ),
               ),
             ),
-            const WindowControlls(),
+            WindowControlls(onSearch: onSearch),
           ],
         ),
       ),
@@ -64,7 +67,8 @@ class _TitleBar_Small extends StatelessWidget {
 }
 
 class _TitleBar_Medium extends StatelessWidget {
-  const _TitleBar_Medium();
+  const _TitleBar_Medium(this.onSearch);
+  final VoidCallback? onSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +101,7 @@ class _TitleBar_Medium extends StatelessWidget {
             ),
           ),
         ),
-        const WindowControlls(),
+        WindowControlls(onSearch: onSearch),
         const SizedBox(width: 8.0),
       ],
     );
@@ -105,7 +109,8 @@ class _TitleBar_Medium extends StatelessWidget {
 }
 
 class _TitleBar_Large extends StatelessWidget {
-  const _TitleBar_Large();
+  const _TitleBar_Large(this.onSearch);
+  final VoidCallback? onSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -147,7 +152,7 @@ class _TitleBar_Large extends StatelessWidget {
               ),
             ),
           ),
-          const WindowControlls(),
+          WindowControlls(onSearch: onSearch),
         ],
       ),
     );
@@ -185,7 +190,8 @@ class NavBackBtn extends StatelessWidget {
 }
 
 class WindowControlls extends StatefulWidget {
-  const WindowControlls({super.key});
+  const WindowControlls({super.key, this.onSearch});
+  final VoidCallback? onSearch;
 
   @override
   State<WindowControlls> createState() => _WindowControllsState();
@@ -307,6 +313,12 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
     return Wrap(
       spacing: 8.0,
       children: [
+        if (widget.onSearch != null)
+          IconButton(
+            tooltip: '搜索 (Ctrl+F)',
+            onPressed: widget.onSearch,
+            icon: const Icon(Symbols.search),
+          ),
         IconButton(
           tooltip: _isFullScreen ? "退出全屏" : "全屏",
           onPressed: _isProcessing ? null : _toggleFullScreen,

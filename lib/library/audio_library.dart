@@ -127,13 +127,17 @@ class AudioLibrary {
   ///     "version": 110
   /// }
   /// ```
-  static Future<void> initFromIndex({File? indexFile}) async {
+  static Future<void> initFromIndex({
+    File? indexFile,
+    Future<void> Function()? beforePublish,
+  }) async {
     final file = indexFile ??
         File(
             '${(await getAppDataDir()).path}${Platform.pathSeparator}index.json');
     final path = file.path;
     final splitPattern = AppSettings.instance.artistSplitPattern;
     final loaded = await Isolate.run(() => _readIndex(path, splitPattern));
+    if (beforePublish != null) await beforePublish();
     _artworkCache.clear();
     _instance = loaded;
     revision.value++;

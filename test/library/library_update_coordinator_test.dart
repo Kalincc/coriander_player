@@ -1,10 +1,74 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:coriander_player/library/audio_library.dart';
 import 'package:coriander_player/library/library_update_coordinator.dart';
 import 'package:coriander_player/src/rust/api/tag_reader.dart';
+import 'package:coriander_player/src/rust/api/system_theme.dart';
+import 'package:coriander_player/src/rust/frb_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  setUpAll(() => RustLib.initMock(api: _ThemeApi()));
+
+  test('staged cancellation keeps the live index even if the scanner finishes',
+      () async {
+    final directory =
+        await Directory.systemTemp.createTemp('library-cancel-test-');
+    addTearDown(() => directory.delete(recursive: true));
+    final live = await File('${directory.path}/index.json')
+        .writeAsString('{"roots":["old"],"folders":[]}');
+    final entered = Completer<Directory>();
+    final finish = Completer<void>();
+    final coordinator = LibraryUpdateCoordinator.staged(
+      indexDirectory: Future.value(directory),
+      folders: ['new'],
+      buildIndex: ({required folders, required indexPath}) async* {
+        entered.complete(Directory(indexPath));
+        await finish.future;
+        await File('$indexPath/index.json')
+            .writeAsString('{"roots":["new"],"folders":[]}');
+      },
+      reconcileAppData: () async => fail('Must not reconcile a cancelled scan'),
+      refreshLyrics: () async =>
+          fail('Must not refresh lyrics after cancellation'),
+    );
+    final run = coordinator.update();
+    final staging = await entered.future;
+    await coordinator.cancel();
+    expect(await File('${staging.path}/.scan-cancel').exists(), isTrue);
+    finish.complete();
+    await run;
+    expect(coordinator.progress.phase, LibraryUpdatePhase.cancelled);
+    expect(await live.readAsString(), '{"roots":["old"],"folders":[]}');
+    expect(await staging.exists(), isFalse);
+  });
+
+  test('validates staging before replacing the live file and refreshing data',
+      () async {
+    final directory =
+        await Directory.systemTemp.createTemp('library-publish-test-');
+    addTearDown(() => directory.delete(recursive: true));
+    final live = await File('${directory.path}/index.json')
+        .writeAsString('{"roots":["old"],"folders":[]}');
+    Future<void> run(String staged) => LibraryUpdateCoordinator.staged(
+          indexDirectory: Future.value(directory),
+          folders: ['new'],
+          buildIndex: ({required folders, required indexPath}) async* {
+            await File('$indexPath/index.json').writeAsString(staged);
+          },
+          reconcileAppData: () async {
+            expect(AudioLibrary.instance.scanRoots, ['new']);
+            expect(await live.readAsString(), staged);
+          },
+          refreshLyrics: () async {},
+        ).update();
+
+    await expectLater(run('{bad'), throwsFormatException);
+    expect(await live.readAsString(), '{"roots":["old"],"folders":[]}');
+    await run('{"roots":["new"],"folders":[]}');
+    expect(await live.readAsString(), '{"roots":["new"],"folders":[]}');
+  });
   test('updates the library before reconciling data and refreshing lyrics',
       () async {
     final events = <String>[];
@@ -61,4 +125,15 @@ void main() {
     expect(calls, isEmpty);
     expect(coordinator.progress.error, isA<StateError>());
   });
+}
+
+class _ThemeApi implements RustLibApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (invocation.memberName ==
+        #crateApiSystemThemeSystemThemeGetSystemTheme) {
+      return const SystemTheme(fore: (255, 0, 0, 0), accent: (255, 0, 0, 0));
+    }
+    return super.noSuchMethod(invocation);
+  }
 }
